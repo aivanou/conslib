@@ -15,11 +15,49 @@ const (
 	UPDATE_SERVER = uint16(15)
 )
 
-type Event struct {
-	Id                 uint16
-	EventTriggeredTime time.Time
-	Payload            interface{}
+//type Event struct {
+//	Id                 uint16
+//	EventTriggeredTime time.Time
+//	Payload            interface{}
+//}
+
+type Event interface {
+	Id() uint16
+	EventTriggeredTime() time.Time
 }
+
+
+type UpdateStateEvent struct {
+	id                 uint16
+	eventTriggeredTime time.Time
+}
+
+func (event *UpdateStateEvent) Id() uint16 {
+	return event.id
+}
+
+func (event *UpdateStateEvent) EventTriggeredTime() time.Time {
+	return event.eventTriggeredTime;
+}
+
+type UpdateParamsEvent struct {
+	id                 uint16
+	eventTriggeredTime time.Time
+	payload            interface{}
+}
+
+func (event *UpdateParamsEvent) Id() uint16 {
+	return event.id
+}
+
+func (event *UpdateParamsEvent) EventTriggeredTime() time.Time {
+	return event.eventTriggeredTime;
+}
+
+func (event *UpdateParamsEvent) Payload() interface{} {
+	return event.payload;
+}
+
 
 type EventLoop interface {
 	ProcessEvents()
@@ -31,7 +69,7 @@ func (server *Info) ProcessEvents() {
 	for {
 		event := <-server.EventChannel
 		switch  {
-		case event.Id == UPDATE_SERVER:
+		case event.Id() == UPDATE_SERVER:
 			updateServerParams(server, event)
 		default:
 			updateStateMachine(server, event)
@@ -39,22 +77,30 @@ func (server *Info) ProcessEvents() {
 	}
 }
 
-func updateStateMachine(server *Info, event *Event) {
+func updateStateMachine(server *Info, event Event) {
 	//	if !isLaterThan(server.LastChangedStateTime, event.EventTriggeredTime) {
 	//		return
 	//	}
+	updEvent, ok := event.(*UpdateStateEvent)
+	if !ok {
+		return
+	}
 	switch  {
 	case server.State == FOLLOWER:
-		processFollower(server, event)
+		processFollower(server, updEvent)
 	case server.State == CANDIDATE:
-		processCandidate(server, event)
+		processCandidate(server, updEvent)
 	case server.State == LEADER:
-		processLeader(server, event)
+		processLeader(server, updEvent)
 	}
 }
 
-func updateServerParams(server *Info, event *Event) {
-	payload := event.Payload
+func updateServerParams(server *Info, event Event) {
+	updEvent, ok := event.(*UpdateParamsEvent)
+	if !ok {
+		return
+	}
+	payload := updEvent.Payload()
 	param, ok := payload.(*UpdateServerEvent)
 	if !ok {
 		return
@@ -64,13 +110,13 @@ func updateServerParams(server *Info, event *Event) {
 		server.Term = param.Term
 	}
 	if param.StateChangedEvent != nil {
-		log.Println(server.Id, "Sending next event: ", param.StateChangedEvent.Id)
+		log.Println(server.Id, "Sending next event: ", param.StateChangedEvent.Id())
 		server.EventChannel <- param.StateChangedEvent
 	}
 }
 
-func processFollower(server *Info, event *Event) {
-	switch event.Id {
+func processFollower(server *Info, event *UpdateStateEvent) {
+	switch event.Id() {
 	case RESET_TIMER:
 		log.Println(server.Id, "Resetting timer")
 		resetTimer(server)
@@ -84,8 +130,8 @@ func processFollower(server *Info, event *Event) {
 	}
 }
 
-func processCandidate(server *Info, event *Event) {
-	switch event.Id {
+func processCandidate(server *Info, event *UpdateStateEvent) {
+	switch event.Id() {
 	case BECOME_LEADER:
 		server.State = LEADER
 		startLeader(server, server.Servers)
@@ -96,8 +142,8 @@ func processCandidate(server *Info, event *Event) {
 	}
 }
 
-func processLeader(server *Info, event *Event) {
-	switch event.Id {
+func processLeader(server *Info, event *UpdateStateEvent) {
+	switch event.Id() {
 	case BECOME_FOLLOWER:
 		log.Println(server.Id, " LEADER -> FOLLOWER transition", server.Term)
 		server.State = FOLLOWER
@@ -108,26 +154,5 @@ func processLeader(server *Info, event *Event) {
 
 type UpdateServerEvent struct {
 	Term              int
-	StateChangedEvent *Event
-}
-
-type EmptyEvent int
-
-func isLaterThan(oldTime, newTime time.Time) bool {
-	cmp := compareTime(newTime, oldTime)
-	return cmp >= 0
-}
-
-func compareTime(t1, t2 time.Time) int {
-	return compareInt64(t1.UnixNano(), t2.UnixNano())
-}
-
-func compareInt64(v1, v2 int64) int {
-	if v1 == v2 {
-		return 0
-	} else if v1 > v2 {
-		return 1
-	}else {
-		return 2
-	}
+	StateChangedEvent Event
 }

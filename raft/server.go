@@ -52,7 +52,7 @@ type Info struct {
 	State                *NodeState
 	Term                 int
 	Log                  []int
-	EventChannel         chan *Event
+	EventChannel         chan Event
 	FollowerDuration     time.Duration
 	FollowerTimer        *time.Timer
 	VotedFor             string
@@ -77,12 +77,13 @@ func startFollower(server *Info) {
 		if !wasActive {
 			server.FollowerTimer = time.NewTimer(time.Millisecond * server.FollowerDuration)
 		}
+		return
 	}else {
 		server.FollowerTimer = time.NewTimer(time.Millisecond * server.FollowerDuration)
 	}
 	go func(info *Info) {
 		<-info.FollowerTimer.C
-		info.EventChannel <- &Event{BECOME_CANDIDATE, time.Now(), nil}
+		sendEvent(info, &UpdateStateEvent{BECOME_CANDIDATE, time.Now()})
 	}(server)
 }
 
@@ -133,7 +134,7 @@ func sendAppendRPC(server *Info, destServer *Server) {
 			log.Fatal("Append RPC error:", err)
 		}
 		if (reply.Term > server.Term) {
-			server.EventChannel <- &Event{BECOME_FOLLOWER, time.Now(), nil}
+			sendEvent(server, &UpdateStateEvent{BECOME_FOLLOWER, time.Now()})
 		}
 	}
 }
@@ -156,10 +157,10 @@ func startCandidate(server *Info) {
 		wg.Wait()
 		if hasMajority(server)  && server.State == CANDIDATE {
 			log.Println(server.Id, "Received response from all servers, becoming LEADER for term ", server.Term)
-			server.EventChannel <- &Event{BECOME_LEADER, time.Now(), nil}
+			sendEvent(server, &UpdateStateEvent{BECOME_LEADER, time.Now()})
 		}else {
 			log.Println(server.Id, "Received response from all servers, becoming follower for term ", server.Term)
-			server.EventChannel <- &Event{BECOME_FOLLOWER, time.Now(), nil}
+			sendEvent(server, &UpdateStateEvent{BECOME_FOLLOWER, time.Now()})
 		}
 	}()
 }
@@ -180,7 +181,7 @@ func sendRequestVoteRPC(server *Info, destServer *Server) error {
 	if reply.Term > server.Term {
 		server.Term = reply.Term
 		server.VotesReceived = 0
-		server.EventChannel <- &Event{BECOME_FOLLOWER, time.Now(), nil}
+		sendEvent(server, &UpdateStateEvent{BECOME_FOLLOWER, time.Now()})
 	}
 	if reply.VoteGranted {
 		server.VotesReceived += 1
@@ -212,7 +213,7 @@ func run() {
 	id, servers := parse(args)
 	log.Println("Init server: ", id, servers[id])
 	rand.Seed(int64(hash(id)))
-	ec := make(chan *Event, 100)
+	ec := make(chan Event, 100)
 	var s = newServer(id, servers[id], ec)
 	rpc.Register(s)
 	rpc.HandleHTTP()
@@ -258,7 +259,7 @@ func parse(args[] string) (string, map[string]int) {
 }
 
 
-func newServer(id string, port int, eventChannel chan *Event) *Info {
+func newServer(id string, port int, eventChannel chan Event) *Info {
 	var addr = &Host{"localhost", port}
 	var s1 = &Server{id, addr, 400, nil, nil}
 	var server = &Info{State:FOLLOWER,

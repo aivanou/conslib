@@ -62,15 +62,15 @@ func (server *Info) AppendEntries(args *AppendArgs, result *AppendResult) error 
 	} else if server.State == FOLLOWER {
 		eventId = RESET_TIMER
 	}
-	log.Printf("%s, state: %d, eventId: %d Received AppendEntries from %s; My Term: %d, Leader Term: %d", server.Id, server.State.String(), eventId, args.LeaderId, server.Term, args.Term)
-	var serverStateEvent *Event = nil
+	log.Printf("%s, state: %s, eventId: %d Received AppendEntries from %s; My Term: %d, Leader Term: %d", server.Id, server.State.String(), eventId, args.LeaderId, server.Term, args.Term)
+	var serverStateEvent Event = nil
 	if eventId != 0 {
-		serverStateEvent = &Event{eventId, time.Now(), nil}
+		serverStateEvent = &UpdateStateEvent{eventId, time.Now()}
 	}
 	if serverTerm <= args.Term {
-		server.EventChannel <- &Event{UPDATE_SERVER, time.Now(), &UpdateServerEvent{args.Term, serverStateEvent}}
+		sendEvent(server, &UpdateParamsEvent{UPDATE_SERVER, time.Now(), &UpdateServerEvent{args.Term, serverStateEvent}})
 	} else if serverStateEvent != nil {
-		server.EventChannel <- serverStateEvent
+		sendEvent(server, serverStateEvent)
 	}
 	result.Success = true
 	result.Term = args.Term
@@ -100,9 +100,9 @@ func (server* Info) RequestVote(args *RequestArgs, result *RequestResult) error 
 		return nil
 	} else if serverTerm < args.Term {
 		log.Println(server.Id, "Received requestVote from server", args.CandidateId, "that has greater Term, Granting vote")
-		serverChangeStateEvent := &Event{BECOME_FOLLOWER, time.Now(), nil}
-		serverUpdateEvent := &Event{UPDATE_SERVER, time.Now(), &UpdateServerEvent{args.Term, serverChangeStateEvent}}
-		server.EventChannel <- serverUpdateEvent
+		serverChangeStateEvent := &UpdateStateEvent{BECOME_FOLLOWER, time.Now()}
+		serverUpdateEvent := &UpdateParamsEvent{UPDATE_SERVER, time.Now(), &UpdateServerEvent{args.Term, serverChangeStateEvent}}
+		sendEvent(server, serverUpdateEvent)
 		server.VotedFor = args.CandidateId
 		result.VoteGranted = true
 		result.Term = args.Term
@@ -117,4 +117,10 @@ func (server* Info) RequestVote(args *RequestArgs, result *RequestResult) error 
 		result.Term = server.Term
 	}
 	return nil
+}
+
+func sendEvent(server *Info, event Event) {
+	go func(inf *Info, ev Event) {
+		server.EventChannel <- event
+	}(server, event)
 }
