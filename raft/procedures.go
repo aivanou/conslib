@@ -63,14 +63,16 @@ func (server *Info) AppendEntries(args *AppendArgs, result *AppendResult) error 
 		eventId = RESET_TIMER
 	}
 	log.Printf("%s, state: %s, eventId: %d Received AppendEntries from %s; My Term: %d, Leader Term: %d", server.Id, server.State.String(), eventId, args.LeaderId, server.Term, args.Term)
+	eventLoop := server.eventProcessor
 	var serverStateEvent Event = nil
 	if eventId != 0 {
-		serverStateEvent = &UpdateStateEvent{eventId, time.Now()}
+		serverStateEvent = eventLoop.NewUpdateStateEvent(eventId, time.Now())
 	}
 	if serverTerm <= args.Term {
-		sendEvent(server, &UpdateParamsEvent{UPDATE_SERVER, time.Now(), &UpdateServerEvent{args.Term, serverStateEvent}})
+		updateParamsEvent := &UpdateParamsEvent{ServerEvent{UPDATE_SERVER, time.Now()}, &UpdateServerPayload{args.Term}}
+		eventLoop.Trigger(eventLoop.Chain(updateParamsEvent, serverStateEvent))
 	} else if serverStateEvent != nil {
-		sendEvent(server, serverStateEvent)
+		eventLoop.Trigger(serverStateEvent)
 	}
 	result.Success = true
 	result.Term = args.Term
@@ -100,9 +102,10 @@ func (server* Info) RequestVote(args *RequestArgs, result *RequestResult) error 
 		return nil
 	} else if serverTerm < args.Term {
 		log.Println(server.Id, "Received requestVote from server", args.CandidateId, "that has greater Term, Granting vote")
-		serverChangeStateEvent := &UpdateStateEvent{BECOME_FOLLOWER, time.Now()}
-		serverUpdateEvent := &UpdateParamsEvent{UPDATE_SERVER, time.Now(), &UpdateServerEvent{args.Term, serverChangeStateEvent}}
-		sendEvent(server, serverUpdateEvent)
+		eventLoop := server.eventProcessor
+		serverChangeStateEvent := eventLoop.NewUpdateStateEvent(BECOME_FOLLOWER, time.Now())
+		serverUpdateEvent := eventLoop.NewUpdateParamsEvent(UPDATE_SERVER, time.Now(), &UpdateServerPayload{args.Term})
+		eventLoop.Trigger(eventLoop.Chain(serverUpdateEvent, serverChangeStateEvent))
 		server.VotedFor = args.CandidateId
 		result.VoteGranted = true
 		result.Term = args.Term
@@ -119,8 +122,3 @@ func (server* Info) RequestVote(args *RequestArgs, result *RequestResult) error 
 	return nil
 }
 
-func sendEvent(server *Info, event Event) {
-	go func(inf *Info, ev Event) {
-		server.EventChannel <- event
-	}(server, event)
-}
