@@ -2,20 +2,79 @@ package main
 
 import (
 	"fmt"
-	"net/rpc"
-//	"net/http"
 	"log"
-//	"net"
 	"os"
 	"time"
 	"sync"
-//	"sync/atomic"
 	"net"
 	"net/http"
 	"strconv"
 	"math/rand"
 	"hash/fnv"
+	"consensus/raft/protocol"
 )
+
+
+func (server *Info) OnAppendEntriesReceived(args *protocol.AppendArgs, result *protocol.AppendResult) error {
+	serverTerm := server.Term
+	if serverTerm > args.Term {
+		result.Success = false
+		result.Term = server.Term
+		return nil
+	}
+	var eventId uint16
+	if serverTerm < args.Term {
+		eventId = BECOME_FOLLOWER
+	} else if server.State == FOLLOWER {
+		eventId = RESET_TIMER
+	}
+	log.Printf("%s, state: %s, eventId: %d Received AppendEntries from %s; My Term: %d, Leader Term: %d", server.Id, server.State.String(), eventId, args.LeaderId, server.Term, args.Term)
+	eventLoop := server.eventProcessor
+	var serverStateEvent Event = nil
+	if eventId != 0 {
+		serverStateEvent = eventLoop.NewUpdateStateEvent(eventId, time.Now())
+	}
+	if serverTerm <= args.Term {
+		updateParamsEvent := &UpdateParamsEvent{ServerEvent{UPDATE_SERVER, time.Now()}, &UpdateServerPayload{args.Term}}
+		eventLoop.Trigger(eventLoop.Chain(updateParamsEvent, serverStateEvent))
+	} else if serverStateEvent != nil {
+		eventLoop.Trigger(serverStateEvent)
+	}
+	result.Success = true
+	result.Term = args.Term
+	return nil
+}
+
+func (server *Info) OnRequestVoteReceived(args *protocol.RequestArgs, result *protocol.RequestResult) error {
+	log.Println(server.Id, "Received RequestVote from", args.CandidateId)
+	var serverTerm = server.Term
+	if serverTerm > args.Term {
+		result.VoteGranted = false
+		result.Term = serverTerm
+		log.Println(server.Id, "Not granting vote to:", args.CandidateId, "because my Term is greater")
+		return nil
+	} else if serverTerm < args.Term {
+		log.Println(server.Id, "Received requestVote from server", args.CandidateId, "that has greater Term, Granting vote")
+		eventLoop := server.eventProcessor
+		serverChangeStateEvent := eventLoop.NewUpdateStateEvent(BECOME_FOLLOWER, time.Now())
+		serverUpdateEvent := eventLoop.NewUpdateParamsEvent(UPDATE_SERVER, time.Now(), &UpdateServerPayload{args.Term})
+		eventLoop.Trigger(eventLoop.Chain(serverUpdateEvent, serverChangeStateEvent))
+		server.VotedFor = args.CandidateId
+		result.VoteGranted = true
+		result.Term = args.Term
+	} else if server.VotedFor == "" {
+		log.Println(server.Id, " Received RequestVote from", args.CandidateId, "Granting vote")
+		server.VotedFor = args.CandidateId
+		result.VoteGranted = true
+		result.Term = args.Term
+	}else if server.VotedFor != "" {
+		log.Println(server.Id, " Received RequestVote from", args.CandidateId, "Not Granting vote")
+		result.VoteGranted = false
+		result.Term = server.Term
+	}
+	return nil
+}
+
 
 type NodeState struct {
 	StateId   int
@@ -30,21 +89,13 @@ var FOLLOWER = &NodeState{1, "FOLLOWER"}
 var CANDIDATE = &NodeState{2, "CANDIDATE"}
 var LEADER = &NodeState{3, "LEADER"}
 
-type Host struct {
-	Domain string
-	Port   int
-}
-
-func (host Host) String() string {
-	return fmt.Sprintf("%s:%d", host.Domain, host.Port)
-}
 
 type Server struct {
-	Id        string
-	Address   *Host
-	Duration  int
-	Ticker    *time.Ticker
-	RpcClient *rpc.Client
+	Id       string
+	Address  *protocol.Host
+	Duration int
+	Ticker   *time.Ticker
+	sender   protocol.Sender
 }
 
 type Info struct {
@@ -53,7 +104,7 @@ type Info struct {
 	Term                 int
 	Log                  []int
 	eventProcessor       EventLoop
-	//	EventChannel         chan Event
+	protocol             protocol.Protocol
 	FollowerDuration     time.Duration
 	FollowerTimer        *time.Timer
 	VotedFor             string
@@ -111,27 +162,10 @@ func stopLeader(server *Info, servers map[string]*Server) error {
 	return nil
 }
 
-
-func sendRegisterServerRpc(server *Info, destServer *Server) {
-	var currServer = server.Servers[server.Id]
-	var registerServerArgs = &RegisterServerArgs{currServer.Id, currServer.Address.Domain, currServer.Address.Port}
-	var reply RegisterServerResult
-	err := destServer.RpcClient.Call("Info.RegisterServer", registerServerArgs, &reply)
-	if err != nil {
-		log.Fatal("arith error:", err)
-	}
-	fmt.Println("Registered server, response : ", reply.Code, reply.Status)
-}
-
 func sendAppendRPC(server *Info, destServer *Server) {
 	for _ = range destServer.Ticker.C {
-		var appendArgs = &AppendArgs{server.Term, server.Id}
-		var reply AppendResult
 		log.Println(server.Id, "Sending APPEND RPC")
-		err := destServer.RpcClient.Call("Info.AppendEntries", appendArgs, &reply)
-		if server.State != LEADER {
-			return
-		}
+		reply, err := destServer.sender.SendAppend(server.Id, server.Term)
 		if err != nil {
 			log.Fatal("Append RPC error:", err)
 		}
@@ -141,6 +175,27 @@ func sendAppendRPC(server *Info, destServer *Server) {
 		}
 	}
 }
+
+
+func sendRequestVoteRPC(server *Info, destServer *Server) error {
+	log.Println(server.Id, " :Sending request vote to: ", destServer.Id)
+	reply, err := destServer.sender.SendRequestVote(server.Id, server.Term)
+	if err != nil {
+		log.Fatal("Error during Info.RequestVote:", err)
+		return err
+	}
+	if reply.Term > server.Term {
+		server.Term = reply.Term
+		server.VotesReceived = 0
+		eventLoop := server.eventProcessor
+		eventLoop.Trigger(eventLoop.NewUpdateStateEvent(BECOME_FOLLOWER, time.Now()))
+	}
+	if reply.VoteGranted {
+		server.VotesReceived += 1
+	}
+	return nil
+}
+
 
 func startCandidate(server *Info) {
 	server.Term += 1
@@ -173,37 +228,16 @@ func hasMajority(server *Info) bool {
 	return server.VotesReceived >= (len(server.Servers) / 2 + len(server.Servers) % 2)
 }
 
-func sendRequestVoteRPC(server *Info, destServer *Server) error {
-	var requestArgs = &RequestArgs{server.Term, 0, 0, server.Id}
-	var reply RequestResult
-	log.Println(server.Id, " :Sending request vote to: ", destServer.Id)
-	err := destServer.RpcClient.Call("Info.RequestVote", requestArgs, &reply)
-	if err != nil {
-		log.Fatal("Error during Info.RequestVote:", err)
-		return err
-	}
-	if reply.Term > server.Term {
-		server.Term = reply.Term
-		server.VotesReceived = 0
-		eventLoop := server.eventProcessor
-		eventLoop.Trigger(eventLoop.NewUpdateStateEvent(BECOME_FOLLOWER, time.Now()))
-	}
-	if reply.VoteGranted {
-		server.VotesReceived += 1
-	}
-	return nil
-}
-
 func addServer(server*Info, newServer *Server) {
 	if _, ok := server.Servers[newServer.Id]; ok {
 		return
 	}
-	client, err := rpc.DialHTTP("tcp", newServer.Address.String())
-	log.Println(server.Id, ": Adding new server locally: ", newServer.Id, newServer.Address)
+	prot := server.protocol
+	sender, err := prot.NewSender(newServer.Address)
 	if err != nil {
-		log.Fatal("dialing:", err)
+		log.Fatal("Error while initialising sender for ", newServer.Address.String())
 	}
-	newServer.RpcClient = client
+	newServer.sender = sender
 	server.Servers[newServer.Id] = newServer
 }
 
@@ -218,15 +252,12 @@ func run() {
 	log.Println("Init server: ", id, servers[id])
 	rand.Seed(int64(hash(id)))
 	var s = newServer(id, servers[id])
-	rpc.Register(s)
-	rpc.HandleHTTP()
-	newRpcServer("localhost", servers[id])
 	time.Sleep(5 * time.Second)
 	for sid, sport := range servers {
 		if sport == servers[id] {
 			continue
 		}
-		addr := &Host{"localhost", sport}
+		addr := &protocol.Host{"localhost", sport}
 		srv := &Server{sid, addr, 400, nil, nil}
 		addServer(s, srv)
 	}
@@ -262,7 +293,7 @@ func parse(args[] string) (string, map[string]int) {
 
 
 func newServer(id string, port int) *Info {
-	var addr = &Host{"localhost", port}
+	var addr = &protocol.Host{"localhost", port}
 	var s1 = &Server{id, addr, 400, nil, nil}
 	var server = &Info{State:FOLLOWER,
 		Term:1,
@@ -270,6 +301,8 @@ func newServer(id string, port int) *Info {
 		Log:make([]int, 0, 100),
 		FollowerDuration:randomDuration(1000),
 	}
+	server.protocol = protocol.NewProtocol()
+	server.protocol.RegisterListener(addr, server)
 	var eventLoop = NewEventProcessor(server)
 	server.eventProcessor = eventLoop
 	server.Servers = make(map[string]*Server)
