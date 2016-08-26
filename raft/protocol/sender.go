@@ -44,7 +44,6 @@ func (sender *RPCSender) SendRegisterServer(id string, host *Host) (*RegisterSer
 func (sender *RPCSender) SendAppend(leaderId string, term int) (*AppendResult, error) {
 	var appendArgs = &AppendArgs{term, leaderId}
 	var reply AppendResult
-	log.Println(leaderId, "Sending APPEND RPC")
 	err := sender.RpcClient.Call("RPCReceiver.AppendEntries", appendArgs, &reply)
 	if err != nil {
 		log.Fatal("SendAppend RPC error:", err)

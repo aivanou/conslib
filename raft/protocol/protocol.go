@@ -22,7 +22,6 @@ type RaftEventHandler interface {
 	OnRequestVoteReceived(args *RequestArgs, result *RequestResult) error
 }
 
-
 type Protocol interface {
 	NewSender(host *Host) (Sender, error)
 	RegisterListener(host *Host, eventHandler RaftEventHandler) error

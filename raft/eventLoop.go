@@ -16,66 +16,17 @@ const (
 )
 
 
-type Event interface {
-	Id() uint16
-	EventTriggeredTime() time.Time
-}
-
-type ServerEvent struct {
-	id                 uint16
-	eventTriggeredTime time.Time
-}
-
-func (event ServerEvent) Id() uint16 {
-	return event.id
-}
-
-func (event ServerEvent) EventTriggeredTime() time.Time {
-	return event.eventTriggeredTime;
-}
-
-
-type UpdateStateEvent struct {
-	Event
-}
-
-type UpdateParamsEvent struct {
-	Event
-	payload interface{}
-}
-
-func (event *UpdateParamsEvent) Payload() interface{} {
-	return event.payload;
-}
-
-type ChainedEvent struct {
-	ServerEvent
-	event Event
-	next  Event
-}
-
-func (event *ChainedEvent) Event() Event {
-	return event.event
-}
-
-func (event *ChainedEvent) NextEvent() Event {
-	return event.next
-}
-
 type EventLoop interface {
 	ProcessEvents() error
-	NewUpdateStateEvent(id uint16, time time.Time) Event
-	NewUpdateParamsEvent(id uint16, time time.Time, payload interface{}) Event
-	Chain(parent Event, child Event) Event
 	Trigger(event Event) error
 }
 
 type EventProcessor struct {
-	server       *Info
+	server       *RaftNode
 	eventChannel chan Event
 }
 
-func NewEventProcessor(server *Info) EventLoop {
+func NewEventProcessor(server *RaftNode) EventLoop {
 	eventChannel := make(chan Event, 100)
 	eventProcessor := &EventProcessor{server, eventChannel}
 	return eventProcessor
@@ -83,7 +34,8 @@ func NewEventProcessor(server *Info) EventLoop {
 
 func (eventProcessor *EventProcessor) ProcessEvents() error {
 	log.Println("Starting event loop for server: ", eventProcessor.server.Id)
-	startFollower(eventProcessor.server)
+	server := eventProcessor.server
+	server.stateHandler.GetActiveState().OnStateStarted()
 	for {
 		event := <-eventProcessor.eventChannel
 		chEvent, ok := event.(*ChainedEvent)
@@ -96,10 +48,6 @@ func (eventProcessor *EventProcessor) ProcessEvents() error {
 	return nil
 }
 
-func (eventProcessor *EventProcessor) Chain(parent Event, child Event) Event {
-	return &ChainedEvent{ServerEvent{1, parent.EventTriggeredTime()}, parent, child}
-}
-
 func (eventProcessor *EventProcessor) Trigger(event Event) error {
 	go func(loop *EventProcessor, ev Event) {
 		loop.eventChannel <- event
@@ -107,11 +55,15 @@ func (eventProcessor *EventProcessor) Trigger(event Event) error {
 	return nil
 }
 
-func (eventProcessor *EventProcessor) NewUpdateStateEvent(id uint16, time time.Time) Event {
+func Chain(parent Event, child Event) Event {
+	return &ChainedEvent{ServerEvent{1, parent.EventTriggeredTime()}, parent, child}
+}
+
+func NewUpdateStateEvent(id uint16, time time.Time) Event {
 	return &UpdateStateEvent{ServerEvent{id, time}}
 }
 
-func (eventProcessor *EventProcessor) NewUpdateParamsEvent(id uint16, time time.Time, payload interface{}) Event {
+func NewUpdateParamsEvent(id uint16, time time.Time, payload interface{}) Event {
 	return &UpdateParamsEvent{ServerEvent{id, time}, payload}}
 
 
@@ -144,12 +96,13 @@ func (eventProcessor *EventProcessor) updateStateMachine(event Event) {
 		return
 	}
 	server := eventProcessor.server
-	switch  {
-	case server.State == FOLLOWER:
+	activeState := server.stateHandler.GetActiveState()
+	switch  activeState.Id(){
+	case FOLLOWER_ID:
 		eventProcessor.processFollower(updEvent)
-	case server.State == CANDIDATE:
+	case CANDIDATE_ID:
 		eventProcessor.processCandidate(updEvent)
-	case server.State == LEADER:
+	case LEADER_ID:
 		eventProcessor.processLeader(updEvent)
 	}
 }
@@ -176,14 +129,12 @@ func (eventProcessor *EventProcessor) processFollower(event *UpdateStateEvent) {
 	switch event.Id() {
 	case RESET_TIMER:
 		log.Println(server.Id, "Resetting timer")
-		resetTimer(server)
+		server.stateHandler.GetActiveState().Process(RESET_TIMER)
 	case BECOME_CANDIDATE:
-		server.State = CANDIDATE
 		log.Println(server.Id, "Becoming candidate")
-		startCandidate(server)
+		server.stateHandler.ChangeState(CANDIDATE_ID)
 	case BECOME_FOLLOWER:
-		server.State = FOLLOWER
-		startFollower(server)
+		server.stateHandler.ChangeState(FOLLOWER_ID)
 	}
 }
 
@@ -191,12 +142,10 @@ func (eventProcessor *EventProcessor) processCandidate(event *UpdateStateEvent) 
 	server := eventProcessor.server
 	switch event.Id() {
 	case BECOME_LEADER:
-		server.State = LEADER
-		startLeader(server, server.Servers)
+		server.stateHandler.ChangeState(LEADER_ID)
 	case BECOME_FOLLOWER:
 		log.Println(server.Id, "EVENT loop Becoming follower")
-		server.State = FOLLOWER
-		startFollower(server)
+		server.stateHandler.ChangeState(FOLLOWER_ID)
 	}
 }
 
@@ -205,12 +154,6 @@ func (eventProcessor *EventProcessor) processLeader(event *UpdateStateEvent) {
 	switch event.Id() {
 	case BECOME_FOLLOWER:
 		log.Println(server.Id, " LEADER -> FOLLOWER transition", server.Term)
-		server.State = FOLLOWER
-		stopLeader(server, nil)
-		startFollower(server)
+		server.stateHandler.ChangeState(FOLLOWER_ID)
 	}
-}
-
-type UpdateServerPayload struct {
-	Term int
 }
