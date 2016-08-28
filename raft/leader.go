@@ -2,6 +2,7 @@ package main
 import (
 	"time"
 //	"log"
+	"log"
 )
 
 func NewLeaderState(nodeState NodeState, raftNode *RaftNode) *LeaderState {
@@ -40,6 +41,7 @@ func (state *LeaderState) Process(eventId uint16) error {
 
 func (state *LeaderState) OnStateStarted() error {
 	for _, slave := range state.slaves {
+		log.Println(state.raftNode.Id, "starting new ticker for: ", slave.Id)
 		slave.Ticker = time.NewTicker(time.Millisecond * slave.Duration)
 		go func(server *SlaveServerTimer) {
 			for _ = range server.Ticker.C {

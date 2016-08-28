@@ -13,6 +13,7 @@ const (
 	BECOME_CANDIDATE = uint16(13)
 	REGISTER_SERVER = uint16(14)
 	UPDATE_SERVER = uint16(15)
+	CHAINED_EVENT = uint16(16)
 )
 
 
@@ -56,7 +57,7 @@ func (eventProcessor *EventProcessor) Trigger(event Event) error {
 }
 
 func Chain(parent Event, child Event) Event {
-	return &ChainedEvent{ServerEvent{1, parent.EventTriggeredTime()}, parent, child}
+	return &ChainedEvent{ServerEvent{CHAINED_EVENT, parent.EventTriggeredTime()}, parent, child}
 }
 
 func NewUpdateStateEvent(id uint16, time time.Time) Event {

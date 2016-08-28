@@ -23,7 +23,7 @@ func (sender *RPCSender)SendRequestVote(id string, term int) (*RequestResult, er
 	log.Println(id, " :Sending request vote to: ", sender.destHost)
 	err := sender.RpcClient.Call("RPCReceiver.RequestVote", requestArgs, &reply)
 	if err != nil {
-		log.Fatal("Error during Info.RequestVote:", err)
+		log.Println("Error during Info.RequestVote:", err)
 		return nil, err
 	}
 	return &reply, nil
@@ -35,7 +35,7 @@ func (sender *RPCSender) SendRegisterServer(id string, host *Host) (*RegisterSer
 	var reply RegisterServerResult
 	err := sender.RpcClient.Call("RPCReceiver.RegisterServer", registerServerArgs, &reply)
 	if err != nil {
-		log.Fatal("Error while sending RendRegisterServer towards :", host, err)
+		log.Println("Error while sending RendRegisterServer towards :", host, err)
 		return nil, err
 	}
 	return &reply, nil
@@ -46,7 +46,7 @@ func (sender *RPCSender) SendAppend(leaderId string, term int) (*AppendResult, e
 	var reply AppendResult
 	err := sender.RpcClient.Call("RPCReceiver.AppendEntries", appendArgs, &reply)
 	if err != nil {
-		log.Fatal("SendAppend RPC error:", err)
+		log.Println("SendAppend RPC error:", err)
 		return nil, err
 	}
 	return &reply, nil

@@ -116,11 +116,12 @@ func newServer(id string, port int) *RaftNode {
 }
 
 func (server *RaftNode) SendAppend(destServerId string) {
-	log.Println(server.Id, "Sending APPEND RPC")
+	log.Println(server.Id, "Sending APPEND RPC to", destServerId, "at time: ", time.Now())
 	destServer := server.Servers[destServerId]
 	reply, err := destServer.sender.SendAppend(server.Id, server.Term)
 	if err != nil {
-		log.Fatal("Append RPC error:", err)
+		log.Println("Append RPC error:", err)
+		return
 	}
 	if (reply.Term > server.Term) {
 		eventLoop := server.eventProcessor
@@ -142,7 +143,7 @@ func (server *RaftNode) sendRequestVoteRPC(destServer *Server) error {
 	log.Println(server.Id, " :Sending request vote to: ", destServer.Id)
 	reply, err := destServer.sender.SendRequestVote(server.Id, server.Term)
 	if err != nil {
-		log.Fatal("Error during Info.RequestVote:", err)
+		log.Println("Error during Info.RequestVote:", err)
 		return err
 	}
 	if reply.Term > server.Term {
@@ -179,12 +180,8 @@ func (server *RaftNode) OnAppendEntriesReceived(args *protocol.AppendArgs, resul
 	if eventId != 0 {
 		serverStateEvent = NewUpdateStateEvent(eventId, time.Now())
 	}
-	if serverTerm <= args.Term {
-		updateParamsEvent := &UpdateParamsEvent{ServerEvent{UPDATE_SERVER, time.Now()}, &UpdateServerPayload{args.Term}}
-		eventLoop.Trigger(Chain(updateParamsEvent, serverStateEvent))
-	} else if serverStateEvent != nil {
-		eventLoop.Trigger(serverStateEvent)
-	}
+	updateParamsEvent := NewUpdateParamsEvent(UPDATE_SERVER, time.Now(), &UpdateServerPayload{args.Term})
+	eventLoop.Trigger(Chain(updateParamsEvent, serverStateEvent))
 	result.Success = true
 	result.Term = args.Term
 	return nil
