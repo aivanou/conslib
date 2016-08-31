@@ -119,9 +119,9 @@ func (eventProcessor *EventProcessor) updateServerParams(event Event) {
 		return
 	}
 	server := eventProcessor.server
-	log.Println(server.Id, "Updating server params: ", server.Term, "->", param.Term)
-	if server.Term < param.Term {
-		server.Term = param.Term
+	log.Println(server.Id, "Updating server params: ", server.State.Term, "->", param.Term)
+	if server.State.Term < param.Term {
+		server.State.UpdateTerm(param.Term)
 	}
 }
 
@@ -154,7 +154,7 @@ func (eventProcessor *EventProcessor) processLeader(event *UpdateStateEvent) {
 	server := eventProcessor.server
 	switch event.Id() {
 	case BECOME_FOLLOWER:
-		log.Println(server.Id, " LEADER -> FOLLOWER transition", server.Term)
+		log.Println(server.Id, " LEADER -> FOLLOWER transition", server.State.Term)
 		server.stateHandler.ChangeState(FOLLOWER_ID)
 	}
 }

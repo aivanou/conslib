@@ -1,9 +1,9 @@
 package main
 import (
 	"time"
-//	"log"
 	"log"
 )
+
 
 func NewLeaderState(nodeState NodeState, raftNode *RaftNode) *LeaderState {
 	leaderState := new(LeaderState)
@@ -12,11 +12,13 @@ func NewLeaderState(nodeState NodeState, raftNode *RaftNode) *LeaderState {
 	return leaderState
 }
 
+
 type LeaderState struct {
 	NodeState
 	slaves   []*SlaveServerTimer
 	raftNode *RaftNode
 }
+
 
 func (state *LeaderState) OnInit(data interface{}) error {
 	slaves := make([]*SlaveServerTimer, 0, len(state.raftNode.Servers))

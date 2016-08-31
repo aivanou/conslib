@@ -9,20 +9,21 @@ import (
 func TestOnAppendEntriesReceived(t *testing.T) {
 
 	s := new(RaftNode)
+	s.State = &RaftState{1, make([]uint64, 100), "", 0}
 	shandler := &MockStateHandler{&MockState{FOLLOWER_ID, "FOLLOWER", make(map[int]int)}}
 	s.stateHandler = shandler
 	mockEventLoop := &MockEventLoop{make(map[uint16]int)}
 	s.eventProcessor = mockEventLoop
-	s.Term = 1
+	s.State.Term = 1
 	res := new(protocol.AppendResult)
-	err := s.OnAppendEntriesReceived(&protocol.AppendArgs{0, "id2"}, res)
+	err := s.OnAppendEntriesReceived(&protocol.AppendArgs{0, "id2", 1, 1, 1, make([]uint64, 10)}, res)
 	if err != nil {
 		t.Fatal("OnAppendEntriesReceived:", err)
 	}
-	if res.Success || res.Term != s.Term {
-		t.Error("Received success when expected to receive fail, server term:", s.Term, "result term:", res.Term)
+	if res.Success || res.Term != s.State.Term {
+		t.Error("Received success when expected to receive fail, server term:", s.State.Term, "result term:", res.Term)
 	}
-	err = s.OnAppendEntriesReceived(&protocol.AppendArgs{1, "id2"}, res)
+	err = s.OnAppendEntriesReceived(&protocol.AppendArgs{1, "id2", 1, 1, 1, make([]uint64, 10)}, res)
 	if err != nil {
 		t.Fatal("OnAppendEntriesReceived:", err)
 	}
@@ -36,7 +37,7 @@ func TestOnAppendEntriesReceived(t *testing.T) {
 	if (!res.Success) {
 		t.Error("Result should be success")
 	}
-	err = s.OnAppendEntriesReceived(&protocol.AppendArgs{2, "id2"}, res)
+	err = s.OnAppendEntriesReceived(&protocol.AppendArgs{2, "id2", 1, 1, 1, make([]uint64, 10)}, res)
 	if mockEventLoop.eventsCount[BECOME_FOLLOWER] != 1 {
 		t.Error("BECOME_FOLLOWER wasn't triggered")
 	}
@@ -50,11 +51,14 @@ func TestOnAppendEntriesReceived(t *testing.T) {
 
 func TestOnRequestVoteReceived(t *testing.T) {
 	s := new(RaftNode)
-	shandler := &MockStateHandler{&MockState{CANDIDATE_ID, "FOLLOWER", make(map[int]int)}}
+	s.State = &RaftState{1, make([]uint64, 100), "", 1}
+	shandler := &MockStateHandler{&MockState{CANDIDATE_ID, "CANDIDATE", make(map[int]int)}}
 	s.stateHandler = shandler
 	mockEventLoop := &MockEventLoop{make(map[uint16]int)}
 	s.eventProcessor = mockEventLoop
-	s.Term = 1
+	s.State.Term = 1
+	res := new(protocol.RequestResult)
+	s.OnRequestVoteReceived(&protocol.RequestArgs{1, 1, 1, ""}, res)
 }
 
 type MockState struct {

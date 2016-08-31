@@ -6,7 +6,6 @@ import (
 
 type eventProcessor func() error
 
-
 type FollowerState struct {
 	NodeState
 	Duration       time.Duration
@@ -19,7 +18,6 @@ func (state *FollowerState) OnInit(data interface{}) error {
 	state.eventFunctions[RESET_TIMER] = state.resetTimer
 	return nil
 }
-
 
 func (state *FollowerState) OnStateStarted() error {
 	server := state.raftServer

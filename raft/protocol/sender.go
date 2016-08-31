@@ -5,8 +5,8 @@ import (
 )
 
 type Sender interface {
-	SendAppend(leaderId string, term int) (*AppendResult, error)
-	SendRequestVote(id string, term int) (*RequestResult, error)
+	SendAppend(args *AppendArgs) (*AppendResult, error)
+	SendRequestVote(args *RequestArgs) (*RequestResult, error)
 	SendRegisterServer(id string, host *Host) (*RegisterServerResult, error)
 }
 
@@ -17,11 +17,10 @@ type RPCSender struct {
 	destHost  *Host
 }
 
-func (sender *RPCSender)SendRequestVote(id string, term int) (*RequestResult, error) {
-	var requestArgs = &RequestArgs{term, 0, 0, id}
+func (sender *RPCSender)SendRequestVote(args *RequestArgs) (*RequestResult, error) {
 	var reply RequestResult
-	log.Println(id, " :Sending request vote to: ", sender.destHost)
-	err := sender.RpcClient.Call("RPCReceiver.RequestVote", requestArgs, &reply)
+	log.Println(args.CandidateId, " :Sending request vote to: ", sender.destHost)
+	err := sender.RpcClient.Call("RPCReceiver.RequestVote", args, &reply)
 	if err != nil {
 		log.Println("Error during Info.RequestVote:", err)
 		return nil, err
@@ -41,10 +40,9 @@ func (sender *RPCSender) SendRegisterServer(id string, host *Host) (*RegisterSer
 	return &reply, nil
 }
 
-func (sender *RPCSender) SendAppend(leaderId string, term int) (*AppendResult, error) {
-	var appendArgs = &AppendArgs{term, leaderId}
+func (sender *RPCSender) SendAppend(args *AppendArgs) (*AppendResult, error) {
 	var reply AppendResult
-	err := sender.RpcClient.Call("RPCReceiver.AppendEntries", appendArgs, &reply)
+	err := sender.RpcClient.Call("RPCReceiver.AppendEntries", args, &reply)
 	if err != nil {
 		log.Println("SendAppend RPC error:", err)
 		return nil, err

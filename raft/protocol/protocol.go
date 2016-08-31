@@ -63,37 +63,3 @@ func (protocol *RPCProtocol) RegisterListener(host *Host, eventHandler RaftEvent
 	go http.Serve(l, nil)
 	return nil
 }
-
-type RequestArgs struct {
-	Term         int
-	LastLogIndex int
-	LastLogTerm  int
-	CandidateId  string
-}
-
-type RequestResult struct {
-	Term        int
-	VoteGranted bool
-}
-
-
-type AppendResult struct {
-	Term    int
-	Success bool
-}
-
-type AppendArgs struct {
-	Term     int
-	LeaderId string
-}
-
-type RegisterServerArgs struct {
-	Id   string
-	Host string
-	Port int
-}
-
-type RegisterServerResult struct {
-	Status string
-	Code   int
-}

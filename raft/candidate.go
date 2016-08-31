@@ -17,9 +17,9 @@ func (state *CandidateState) OnInit(data interface{}) error {
 
 func (state *CandidateState) OnStateStarted() error {
 	server := state.raftServer
-	server.Term += 1
-	server.VotedFor = server.Id
-	server.VotesReceived = 1
+	server.State.IncTerm()
+	server.State.IncVotesForTerm()
+	server.State.VotedFor = server.Id
 	var wg sync.WaitGroup
 	wg.Add(len(server.Servers))
 	state.raftServer.SendRequestVotes(&wg)
@@ -28,10 +28,10 @@ func (state *CandidateState) OnStateStarted() error {
 		eventLoop := rnode.eventProcessor
 		//raftNode.hasMajority()
 		if hasMajority(rnode) {
-			log.Println(rnode.Id, "Received response from all servers, becoming LEADER for term ", rnode.Term)
+			log.Println(rnode.Id, "Received response from all servers, becoming LEADER for term ", rnode.State.Term)
 			eventLoop.Trigger(NewUpdateStateEvent(BECOME_LEADER, time.Now()))
 		}else {
-			log.Println(rnode.Id, "Received response from all servers, becoming follower for term ", rnode.Term)
+			log.Println(rnode.Id, "Received response from all servers, becoming follower for term ", rnode.State.Term)
 			eventLoop.Trigger(NewUpdateStateEvent(BECOME_FOLLOWER, time.Now()))
 		}
 	}(server)

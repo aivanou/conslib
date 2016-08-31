@@ -12,7 +12,7 @@ type ServerEvent struct {
 }
 
 type UpdateServerPayload struct {
-	Term int
+	Term uint64
 }
 
 func (event ServerEvent) Id() uint16 {
