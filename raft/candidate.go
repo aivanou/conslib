@@ -38,7 +38,7 @@ func (state *CandidateState) OnStateStarted() error {
 	return nil
 }
 
-func (state *CandidateState) Process(eventId uint16) error {
+func (state *CandidateState) Process(eventId uint16, data interface{}) error {
 	return nil
 }
 

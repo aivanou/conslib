@@ -4,7 +4,7 @@ import (
 	"log"
 )
 
-type eventProcessor func() error
+type eventProcessor func(data interface{}) error
 
 type FollowerState struct {
 	NodeState
@@ -45,11 +45,11 @@ func (state *FollowerState) OnStateFinished() error {
 	return nil
 }
 
-func (state *FollowerState) Process(eventId uint16) error {
-	return state.eventFunctions[eventId]()
+func (state *FollowerState) Process(eventId uint16, data interface{}) error {
+	return state.eventFunctions[eventId](data)
 }
 
-func (state *FollowerState) resetTimer() error {
+func (state *FollowerState) resetTimer(data interface{}) error {
 	if state.Timer != nil {
 		log.Println(state.raftServer.Id, "RESETTING TIMER EVENT WAS TRIGGERED: resetting to ", state.Duration)
 		wasActive := state.Timer.Reset(time.Millisecond * state.Duration)

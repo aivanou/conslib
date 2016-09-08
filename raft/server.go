@@ -8,6 +8,7 @@ import (
 	"sync"
 	"strconv"
 	"consensus/raft/protocol"
+	"consensus/raft/logstore"
 )
 
 
@@ -101,7 +102,7 @@ func newServer(id string, port int) *RaftNode {
 	var addr = &protocol.Host{"localhost", port}
 	var server = &RaftNode{
 		Id:id,
-		State: &RaftState{1, make([]uint64, 100), "", 0},
+		State: &RaftState{1, "", 0, 0, 0, logstore.NewLogStore()},
 	}
 	server.protocol = protocol.NewProtocol()
 	server.protocol.RegisterListener(addr, server)
@@ -111,19 +112,15 @@ func newServer(id string, port int) *RaftNode {
 	return server
 }
 
-func (server *RaftNode) SendAppend(destServerId string) {
+func (server *RaftNode) SendAppend(destServerId string, args *protocol.AppendArgs) (*protocol.AppendResult, error) {
 	log.Println(server.Id, "Sending APPEND RPC to", destServerId, "at time: ", time.Now())
 	destServer := server.Servers[destServerId]
-	appendArgs := &protocol.AppendArgs{server.State.Term, server.Id, 1, 1, 1, make([]uint64, 1)}
-	reply, err := destServer.sender.SendAppend(appendArgs)
+	reply, err := destServer.sender.SendAppend(args)
 	if err != nil {
 		log.Println("Append RPC error:", err)
-		return
+		return nil, err
 	}
-	if (reply.Term > server.State.Term) {
-		eventLoop := server.eventProcessor
-		eventLoop.Trigger(NewUpdateStateEvent(BECOME_FOLLOWER, time.Now()))
-	}
+	return reply, nil
 }
 
 func (server *RaftNode) SendRequestVotes(wg *sync.WaitGroup) {
@@ -182,6 +179,33 @@ func (server *RaftNode) OnAppendEntriesReceived(args *protocol.AppendArgs, resul
 	eventLoop.Trigger(Chain(updateParamsEvent, serverStateEvent))
 	result.Success = true
 	result.Term = args.Term
+	lastLogItem := server.State.Store.LastLogItem()
+	if lastLogItem == nil {
+		for _, li := range args.Entries {
+			server.State.Store.AppendLogItem(&li)
+		}
+		if (args.LeaderCommit > server.State.CommitIndex) {
+			lastLogItem := server.State.Store.LastLogItem()
+			if lastLogItem != nil {
+				server.State.UpdateCommitIndex(min(args.LeaderCommit, lastLogItem.Index))
+			}
+		}
+	}else if lastLogItem.Index > args.PrevLogIndex {
+		server.State.Store.RemoveAfterIncl(lastLogItem.Index)
+		result.Success = false
+	}else if lastLogItem.Index < args.PrevLogIndex {
+		result.Success = false
+	} else if (lastLogItem.Index == args.PrevLogIndex && lastLogItem.Term != args.PrevLogTerm) {
+		server.State.Store.RemoveByIndex(lastLogItem.Index)
+		result.Success = false
+	} else {
+		for _, li := range args.Entries {
+			server.State.Store.AppendLogItem(&li)
+		}
+		if (args.LeaderCommit > server.State.CommitIndex) {
+			server.State.UpdateCommitIndex(min(args.LeaderCommit, server.State.Store.LastLogItem().Index))
+		}
+	}
 	return nil
 }
 
@@ -213,4 +237,18 @@ func (server *RaftNode) OnRequestVoteReceived(args *protocol.RequestArgs, result
 		result.Term = server.State.Term
 	}
 	return nil
+}
+
+func min(v1, v2 uint32) uint32 {
+	if v1 > v2 {
+		return v2
+	}
+	return v1
+}
+
+func max(v1, v2 uint32) uint32 {
+	if v1 > v2 {
+		return v1
+	}
+	return v2
 }

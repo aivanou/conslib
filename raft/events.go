@@ -27,12 +27,12 @@ type UpdateStateEvent struct {
 	Event
 }
 
-type UpdateParamsEvent struct {
+type ServerRequestEvent struct {
 	Event
 	payload interface{}
 }
 
-func (event *UpdateParamsEvent) Payload() interface{} {
+func (event *ServerRequestEvent) Payload() interface{} {
 	return event.payload;
 }
 

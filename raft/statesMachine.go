@@ -8,7 +8,7 @@ type State interface {
 	OnInit(data interface{}) error
 	OnStateStarted() error
 	OnStateFinished() error
-	Process(eventId uint16) error
+	Process(eventId uint16, data interface{}) error
 }
 
 type NodeState struct {

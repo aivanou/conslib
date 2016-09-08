@@ -14,6 +14,7 @@ const (
 	REGISTER_SERVER = uint16(14)
 	UPDATE_SERVER = uint16(15)
 	CHAINED_EVENT = uint16(16)
+	WRITE_LOG = uint16(17)
 )
 
 
@@ -39,12 +40,7 @@ func (eventProcessor *EventProcessor) ProcessEvents() error {
 	server.stateHandler.GetActiveState().OnStateStarted()
 	for {
 		event := <-eventProcessor.eventChannel
-		chEvent, ok := event.(*ChainedEvent)
-		if ok {
-			eventProcessor.processChainedEvent(chEvent)
-		} else {
-			eventProcessor.processEvent(event)
-		}
+		eventProcessor.processEvent(event)
 	}
 	return nil
 }
@@ -65,7 +61,7 @@ func NewUpdateStateEvent(id uint16, time time.Time) Event {
 }
 
 func NewUpdateParamsEvent(id uint16, time time.Time, payload interface{}) Event {
-	return &UpdateParamsEvent{ServerEvent{id, time}, payload}}
+	return &ServerRequestEvent{ServerEvent{id, time}, payload}}
 
 
 func (eventProcessor *EventProcessor) processChainedEvent(chEvent *ChainedEvent) {
@@ -80,11 +76,24 @@ func (eventProcessor *EventProcessor) processChainedEvent(chEvent *ChainedEvent)
 
 
 func (eventProcessor *EventProcessor) processEvent(event Event) {
-	switch  {
+	switch  event.(type){
+	case *ChainedEvent:
+		eventProcessor.processChainedEvent(event.(*ChainedEvent))
+	case *ServerRequestEvent:
+		eventProcessor.processServerRequestEvent(event.(*ServerRequestEvent))
+	case *UpdateStateEvent:
+		eventProcessor.updateStateMachine(event)
+	default:
+		log.Println(eventProcessor.server.Id, "Unrecognized event: ", event.Id())
+	}
+}
+
+func (eventProcessor *EventProcessor) processServerRequestEvent(event *ServerRequestEvent) {
+	switch {
 	case event.Id() == UPDATE_SERVER:
 		eventProcessor.updateServerParams(event)
 	default:
-		eventProcessor.updateStateMachine(event)
+		eventProcessor.server.stateHandler.GetActiveState().Process(event.Id(), event.Payload())
 	}
 }
 
@@ -108,12 +117,8 @@ func (eventProcessor *EventProcessor) updateStateMachine(event Event) {
 	}
 }
 
-func (eventProcessor *EventProcessor) updateServerParams(event Event) {
-	updEvent, ok := event.(*UpdateParamsEvent)
-	if !ok {
-		return
-	}
-	payload := updEvent.Payload()
+func (eventProcessor *EventProcessor) updateServerParams(event *ServerRequestEvent) {
+	payload := event.Payload()
 	param, ok := payload.(*UpdateServerPayload)
 	if !ok {
 		return
@@ -128,9 +133,6 @@ func (eventProcessor *EventProcessor) updateServerParams(event Event) {
 func (eventProcessor *EventProcessor) processFollower(event *UpdateStateEvent) {
 	server := eventProcessor.server
 	switch event.Id() {
-	case RESET_TIMER:
-		log.Println(server.Id, "Resetting timer")
-		server.stateHandler.GetActiveState().Process(RESET_TIMER)
 	case BECOME_CANDIDATE:
 		log.Println(server.Id, "Becoming candidate")
 		server.stateHandler.ChangeState(CANDIDATE_ID)

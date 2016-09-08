@@ -1,4 +1,5 @@
 package protocol
+import "consensus/raft/logstore"
 
 
 type RequestArgs struct {
@@ -17,10 +18,10 @@ type RequestResult struct {
 type AppendArgs struct {
 	Term         uint64
 	LeaderId     string
-	PrevLogIndex uint64
+	PrevLogIndex uint32
 	PrevLogTerm  uint64
-	LeaderCommit uint64
-	Entries      []uint64
+	LeaderCommit uint32
+	Entries      []logstore.LogItem
 }
 
 type AppendResult struct {
