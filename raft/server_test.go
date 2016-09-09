@@ -3,13 +3,12 @@ package main
 import (
 	"testing"
 	"consensus/raft/protocol"
-	"fmt"
 	"consensus/raft/logstore"
 	"github.com/stretchr/testify/assert"
+//	"github.com/Sirupsen/logrus"
 )
 
-func TestOnAppendEntriesReceived(t *testing.T) {
-
+func TestOnAppendEntriesRPCEventsTriggered(t *testing.T) {
 	s := new(RaftNode)
 	s.State = &RaftState{1, "", 0, 0, 0, logstore.NewLogStore()}
 	shandler := &MockStateHandler{&MockState{FOLLOWER_ID, "FOLLOWER", make(map[int]int)}}
@@ -23,7 +22,6 @@ func TestOnAppendEntriesReceived(t *testing.T) {
 	assert.False(t, res.Success || res.Term != s.State.Term, "Received success when expected to receive fail")
 	err = s.OnAppendEntriesReceived(&protocol.AppendArgs{1, "id2", 1, 1, 1, make([]logstore.LogItem, 0, 10)}, res)
 	assert.Nil(t, err)
-	fmt.Println(mockEventLoop.eventsCount)
 	assert.Equal(t, 1, mockEventLoop.eventsCount[RESET_TIMER], "RESET_TIMER wasn't triggered")
 	assert.Equal(t, 1, mockEventLoop.eventsCount[UPDATE_SERVER], "UPDATE_SERVER wasn't triggered")
 	assert.True(t, res.Success)
@@ -33,14 +31,8 @@ func TestOnAppendEntriesReceived(t *testing.T) {
 	assert.True(t, res.Success)
 }
 
-func TestAppendLogItems(t *testing.T) {
-	s := new(RaftNode)
-	s.State = &RaftState{1, "", 0, 0, 0, logstore.NewLogStore()}
-	shandler := &MockStateHandler{&MockState{FOLLOWER_ID, "FOLLOWER", make(map[int]int)}}
-	s.stateHandler = shandler
-	mockEventLoop := &MockEventLoop{make(map[uint16]int)}
-	s.eventProcessor = mockEventLoop
-	s.State.Term = 1
+func TestOnAppendEntriesRPCLogItemsChanged(t *testing.T) {
+	s := NewMockRaftNode(1, FOLLOWER_ID, "FOLLOWER")
 	logSize := 10
 	items := GenRandomLogItems(logSize, 1, 1)
 	res := new(protocol.AppendResult)
@@ -62,13 +54,7 @@ func TestAppendLogItems(t *testing.T) {
 }
 
 func TestAppendEntriesRPCRemoveLogItems(t *testing.T) {
-	s := new(RaftNode)
-	s.State = &RaftState{1, "", 0, 0, 0, logstore.NewLogStore()}
-	shandler := &MockStateHandler{&MockState{FOLLOWER_ID, "FOLLOWER", make(map[int]int)}}
-	s.stateHandler = shandler
-	mockEventLoop := &MockEventLoop{make(map[uint16]int)}
-	s.eventProcessor = mockEventLoop
-	s.State.Term = 1
+	s := NewMockRaftNode(1, FOLLOWER_ID, "FOLLOWER")
 	store := s.State.Store
 	logSize := 10
 	items := GenRandomLogItems(logSize, 1, 1)
@@ -93,16 +79,70 @@ func TestAppendEntriesRPCRemoveLogItems(t *testing.T) {
 	assert.Equal(t, uint32(14), store.Size())
 }
 
-func TestOnRequestVoteReceived(t *testing.T) {
+func TestAppendEntriesRPCWhenReqLogIsGreater(t *testing.T) {
+	s := NewMockRaftNode(1, FOLLOWER_ID, "FOLLOWER")
+	store := s.State.Store
+	logSize := 10
+	items := GenRandomLogItems(logSize, 1, 1)
+	res := new(protocol.AppendResult)
+	s.OnAppendEntriesReceived(&protocol.AppendArgs{1, "id2", 1, 1, 1, items}, res)
+	prevLogIndex := uint32(20)
+	items = GenRandomLogItems(logSize, 1, 10)
+	res.Success = false
+	for !res.Success {
+		s.OnAppendEntriesReceived(&protocol.AppendArgs{1, "id2", prevLogIndex, 1, 1, items}, res)
+		prevLogIndex -= 1
+	}
+	assert.Equal(t, uint32(20), store.Size())
+}
+
+func TestOnRequestVoteRPCNotGrantingVote(t *testing.T) {
+	s := NewMockRaftNode(1, CANDIDATE_ID, "CANDIDATE")
+	res := new(protocol.RequestResult)
+	s.OnRequestVoteReceived(&protocol.RequestArgs{0, 1, 1, ""}, res)
+	assert.False(t, res.VoteGranted)
+	assert.Equal(t, uint64(1), res.Term)
+
+	s.State.VotedFor = ""
+	s.OnRequestVoteReceived(&protocol.RequestArgs{1, 1, 1, ""}, res)
+	assert.True(t, res.VoteGranted)
+
+	s.State.VotedFor = "id1"
+	s.OnRequestVoteReceived(&protocol.RequestArgs{1, 1, 1, ""}, res)
+	assert.False(t, res.VoteGranted)
+
+	s.State.Term = 2
+	items := GenRandomLogItems(10, 2, 1)
+	for _, it := range items {
+		s.State.Store.AppendLogItem(&it)
+	}
+	s.State.VotedFor = ""
+	/**Don't grant vote when the request has PrevLogIndex and PrevLogTerm smaller than server's*/
+	s.OnRequestVoteReceived(&protocol.RequestArgs{2, 1, 1, ""}, res)
+	assert.False(t, res.VoteGranted)
+	/**Grant vote when the request has PrevLogIndex and PrevLogTerm at least the same as server's*/
+	s.OnRequestVoteReceived(&protocol.RequestArgs{2, 10, 2, ""}, res)
+	assert.True(t, res.VoteGranted)
+
+	s.State.VotedFor = ""
+	/**Don't grant vote when the request has PrevLogIndex greater and PrevLogTerm smaller than server's*/
+	s.OnRequestVoteReceived(&protocol.RequestArgs{2, 11, 1, ""}, res)
+	assert.False(t, res.VoteGranted)
+
+	/**Grant vote when the request has PrevLogIndex and PrevLogTerm greater than server's*/
+	s.OnRequestVoteReceived(&protocol.RequestArgs{2, 10, 3, ""}, res)
+	assert.True(t, res.VoteGranted)
+}
+
+func NewMockRaftNode(term uint64, state int, stateName string) *RaftNode {
 	s := new(RaftNode)
 	s.State = &RaftState{1, "", 0, 0, 0, logstore.NewLogStore()}
-	shandler := &MockStateHandler{&MockState{CANDIDATE_ID, "CANDIDATE", make(map[int]int)}}
+	shandler := &MockStateHandler{&MockState{state, stateName, make(map[int]int)}}
 	s.stateHandler = shandler
 	mockEventLoop := &MockEventLoop{make(map[uint16]int)}
 	s.eventProcessor = mockEventLoop
-	s.State.Term = 1
-	res := new(protocol.RequestResult)
-	s.OnRequestVoteReceived(&protocol.RequestArgs{1, 1, 1, ""}, res)
+	s.State.Term = term
+	return s
 }
 
 type MockState struct {

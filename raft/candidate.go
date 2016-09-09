@@ -1,7 +1,6 @@
 package main
 import (
 	"sync"
-	"log"
 	"time"
 )
 

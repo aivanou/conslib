@@ -240,7 +240,7 @@ func (store *LogStore) findOrNextGreater(index uint32) *LogStoreNode {
 }
 
 func (store *LogStore) gatherAfter(index uint32) []LogItem {
-	items := make([]LogItem, 0, 1)
+	items := make([]LogItem, 0, 0)
 	item := store.findOrNextGreater(index)
 	if item == nil {
 		return items

@@ -1,7 +1,6 @@
 package main
 import (
 	"time"
-	"log"
 )
 
 type eventProcessor func(data interface{}) error

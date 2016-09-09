@@ -4,7 +4,7 @@ import "consensus/raft/logstore"
 
 type RequestArgs struct {
 	Term         uint64
-	LastLogIndex uint64
+	LastLogIndex uint32
 	LastLogTerm  uint64
 	CandidateId  string
 }

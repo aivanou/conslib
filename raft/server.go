@@ -1,12 +1,9 @@
 package main
 
 import (
-	"fmt"
-	"log"
 	"os"
 	"time"
 	"sync"
-	"strconv"
 	"consensus/raft/protocol"
 	"consensus/raft/logstore"
 )
@@ -29,24 +26,6 @@ type RaftNode struct {
 	stateHandler         StateHandler
 }
 
-
-func hasMajority(server *RaftNode) bool {
-	return server.State.VotesReceived >= uint32(len(server.Servers) / 2 + 1)
-}
-
-func addServer(server*RaftNode, newServer *Server) {
-	if _, ok := server.Servers[newServer.Id]; ok {
-		return
-	}
-	prot := server.protocol
-	sender, err := prot.NewSender(newServer.Address)
-	if err != nil {
-		log.Fatal("Error while initialising sender for ", newServer.Address.String())
-	}
-	newServer.sender = sender
-	server.Servers[newServer.Id] = newServer
-}
-
 func main() {
 	run()
 }
@@ -54,10 +33,11 @@ func main() {
 func run() {
 	args := os.Args[1:]
 	id, servers := parse(args)
-	log.Println("Init server: ", id, servers[id])
+
+	log.Debug(id, " Starting server on port ", servers[id])
 
 	var s = newServer(id, servers[id])
-	time.Sleep(5 * time.Second)
+	time.Sleep(1 * time.Second)
 	for sid, sport := range servers {
 		if sport == servers[id] {
 			continue
@@ -66,36 +46,12 @@ func run() {
 		srv := &Server{sid, addr, nil}
 		addServer(s, srv)
 	}
-	fmt.Println(s.Servers)
 	stateHandler := NewStateHandler(s)
 	s.stateHandler = stateHandler
 	go s.eventProcessor.ProcessEvents()
 	var wg sync.WaitGroup
 	wg.Add(3)
 	wg.Wait()
-}
-
-
-func parse(args[] string) (string, map[string]int) {
-	var id string
-	var servers = make(map[string]int)
-	for i := 0; i < len(args); i++ {
-		if args[i] == "-id" {
-			id = args[i + 1]
-			i += 1
-		}else if args[i] == "-s" {
-			i += 1
-			number, _ := strconv.Atoi(args[i])
-			i += 1
-			for j := 0; j < number; j++ {
-				sid := args[i + j * 2]
-				port, _ := strconv.Atoi(args[i + j * 2 + 1])
-				servers[sid] = port
-			}
-			i += number * 2
-		}
-	}
-	return id, servers
 }
 
 func newServer(id string, port int) *RaftNode {
@@ -113,11 +69,11 @@ func newServer(id string, port int) *RaftNode {
 }
 
 func (server *RaftNode) SendAppend(destServerId string, args *protocol.AppendArgs) (*protocol.AppendResult, error) {
-	log.Println(server.Id, "Sending APPEND RPC to", destServerId, "at time: ", time.Now())
+	log.Debug(server.Id, " Sending APPEND_RPC to ", destServerId, " at time: ", time.Now())
 	destServer := server.Servers[destServerId]
 	reply, err := destServer.sender.SendAppend(args)
 	if err != nil {
-		log.Println("Append RPC error:", err)
+		log.Println(server.Id, "Append RPC error:", err)
 		return nil, err
 	}
 	return reply, nil
@@ -127,18 +83,17 @@ func (server *RaftNode) SendRequestVotes(wg *sync.WaitGroup) {
 	for _, srv := range server.Servers {
 		go func(rnode *RaftNode, destServer *Server, barrier *sync.WaitGroup) {
 			rnode.sendRequestVoteRPC(destServer)
-			log.Println(rnode.Id, "Minus barrier")
 			barrier.Done()
 		}(server, srv, wg)
 	}
 }
 
 func (server *RaftNode) sendRequestVoteRPC(destServer *Server) error {
-	log.Println(server.Id, " :Sending request vote to: ", destServer.Id)
+	log.Debug(server.Id, " :Sending REQUEST_VOTE_RPC to: ", destServer.Id)
 	reqArgs := &protocol.RequestArgs{server.State.Term, 1, 1, server.Id}
 	reply, err := destServer.sender.SendRequestVote(reqArgs)
 	if err != nil {
-		log.Println("Error during Info.RequestVote:", err)
+		log.Println(server.Id, " Error during Info.RequestVote: ", err)
 		return err
 	}
 	if reply.Term > server.State.Term {
@@ -154,7 +109,9 @@ func (server *RaftNode) sendRequestVoteRPC(destServer *Server) error {
 	return nil
 }
 
-
+/**
+* This function is triggered every time when another server sends APPEND_ENTRIES RPC request.
+*/
 func (server *RaftNode) OnAppendEntriesReceived(args *protocol.AppendArgs, result *protocol.AppendResult) error {
 	serverTerm := server.State.Term
 	if serverTerm > args.Term {
@@ -164,23 +121,25 @@ func (server *RaftNode) OnAppendEntriesReceived(args *protocol.AppendArgs, resul
 	}
 	var eventId uint16
 	serverState := server.stateHandler.GetActiveState()
+	var serverStateEvent Event = nil
 	if serverTerm < args.Term {
 		eventId = BECOME_FOLLOWER
+		serverStateEvent = NewUpdateStateEvent(eventId, time.Now())
 	} else if serverState.Id() == FOLLOWER_ID {
 		eventId = RESET_TIMER
+		serverStateEvent = NewServerRequestEvent(eventId, time.Now(), nil)
 	}
-	log.Printf("%s, state: %s, eventId: %d Received AppendEntries from %s; My Term: %d, Leader Term: %d", server.Id, server.stateHandler.GetActiveState().Name(), eventId, args.LeaderId, server.State.Term, args.Term)
+	log.Debug(server.Id, " Received APPEND_ENTRIES_RPC. My Term: ", server.State.Term, " My state: ", server.stateHandler.GetActiveState().Name(), " Leader term: ", args.Term, " Leader ID: ", args.LeaderId)
 	eventLoop := server.eventProcessor
-	var serverStateEvent Event = nil
-	if eventId != 0 {
-		serverStateEvent = NewUpdateStateEvent(eventId, time.Now())
+	updateParamsEvent := NewServerRequestEvent(UPDATE_SERVER, time.Now(), &UpdateServerPayload{args.Term})
+	if serverState != nil {
+		eventLoop.Trigger(Chain(updateParamsEvent, serverStateEvent))
 	}
-	updateParamsEvent := NewUpdateParamsEvent(UPDATE_SERVER, time.Now(), &UpdateServerPayload{args.Term})
-	eventLoop.Trigger(Chain(updateParamsEvent, serverStateEvent))
 	result.Success = true
 	result.Term = args.Term
 	lastLogItem := server.State.Store.LastLogItem()
 	if lastLogItem == nil {
+		log.Debug(server.Id, " Appending new entries, because I have no entries")
 		for _, li := range args.Entries {
 			server.State.Store.AppendLogItem(&li)
 		}
@@ -191,6 +150,8 @@ func (server *RaftNode) OnAppendEntriesReceived(args *protocol.AppendArgs, resul
 			}
 		}
 	}else if lastLogItem.Index > args.PrevLogIndex {
+		log.Debug(server.Id, "Don't grant entry, because: my LastLogIndex:", lastLogItem.Index, " greater than: ", args.PrevLogIndex)
+		// if lastLog in server's store has greater index than PrevLogIndex, remove all entries after lastLog.Index, and reply false
 		server.State.Store.RemoveAfterIncl(lastLogItem.Index)
 		result.Success = false
 	}else if lastLogItem.Index < args.PrevLogIndex {
@@ -209,6 +170,9 @@ func (server *RaftNode) OnAppendEntriesReceived(args *protocol.AppendArgs, resul
 	return nil
 }
 
+/**
+* This function is triggered every time when another server sends REQUEST_VOTE RPC request.
+*/
 func (server *RaftNode) OnRequestVoteReceived(args *protocol.RequestArgs, result *protocol.RequestResult) error {
 	log.Println(server.Id, "Received RequestVote from", args.CandidateId)
 	var serverTerm = server.State.Term
@@ -221,34 +185,45 @@ func (server *RaftNode) OnRequestVoteReceived(args *protocol.RequestArgs, result
 		log.Println(server.Id, "Received requestVote from server", args.CandidateId, "that has greater Term, Granting vote")
 		eventLoop := server.eventProcessor
 		serverChangeStateEvent := NewUpdateStateEvent(BECOME_FOLLOWER, time.Now())
-		serverUpdateEvent := NewUpdateParamsEvent(UPDATE_SERVER, time.Now(), &UpdateServerPayload{args.Term})
+		serverUpdateEvent := NewServerRequestEvent(UPDATE_SERVER, time.Now(), &UpdateServerPayload{args.Term})
 		eventLoop.Trigger(Chain(serverUpdateEvent, serverChangeStateEvent))
 		server.State.VotedFor = args.CandidateId
 		result.VoteGranted = true
 		result.Term = args.Term
 	} else if server.State.VotedFor == "" {
-		log.Println(server.Id, " Received RequestVote from", args.CandidateId, "Granting vote")
-		server.State.VotedFor = args.CandidateId
-		result.VoteGranted = true
-		result.Term = args.Term
+		store := server.State.Store
+		lastLogItem := store.LastLogItem()
+		if lastLogItem == nil || (lastLogItem.Index <= args.LastLogIndex && lastLogItem.Term <= args.LastLogTerm) {
+			log.Println(server.Id, " Received RequestVote from", args.CandidateId, "Granting vote")
+			server.State.VotedFor = args.CandidateId
+			result.VoteGranted = true
+			result.Term = args.Term
+		}else {
+			result.VoteGranted = false
+			result.Term = server.State.Term
+		}
 	}else if server.State.VotedFor != "" {
-		log.Println(server.Id, " Received RequestVote from", args.CandidateId, "Not Granting vote")
+		log.Debug(server.Id, " Received RequestVote from", args.CandidateId, "Not Granting vote because already granted to: ", server.State.VotedFor)
 		result.VoteGranted = false
 		result.Term = server.State.Term
 	}
 	return nil
 }
 
-func min(v1, v2 uint32) uint32 {
-	if v1 > v2 {
-		return v2
-	}
-	return v1
+
+func hasMajority(server *RaftNode) bool {
+	return server.State.VotesReceived >= uint32(len(server.Servers) / 2 + 1)
 }
 
-func max(v1, v2 uint32) uint32 {
-	if v1 > v2 {
-		return v1
+func addServer(server*RaftNode, newServer *Server) {
+	if _, ok := server.Servers[newServer.Id]; ok {
+		return
 	}
-	return v2
+	prot := server.protocol
+	sender, err := prot.NewSender(newServer.Address)
+	if err != nil {
+		log.Fatal("Error while initialising sender for ", newServer.Address.String())
+	}
+	newServer.sender = sender
+	server.Servers[newServer.Id] = newServer
 }

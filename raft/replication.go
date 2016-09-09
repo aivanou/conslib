@@ -10,7 +10,7 @@ type Replication struct {
 	responseReceiver chan *ReplicationResult
 	peerReplReceiver chan *ReplStatus
 	leaderState      *LeaderState
-	activeTasks      map[uint32]*ReplicationResult
+	activeTasks      map[string]*ReplicationResult
 }
 
 const (
@@ -20,17 +20,19 @@ const (
 
 type ReplStatus struct {
 	code   uint8
-	taskId uint32
+	taskId string
 }
 
 type ReplicationTask struct {
 	peer   *Peer
-	taskId uint32
+	taskId string
+	npeers uint32
 }
 
 type ReplicationResult struct {
-	TaskId             uint32
+	TaskId             string
 	TotalCount         uint32
+	ProcessedCount     uint32
 	SuccessCount       uint32
 	FailedCount        uint32
 	ReplicationTimeout uint32
@@ -43,16 +45,20 @@ func NewReplication(state *LeaderState) *Replication {
 	repl.stop = make(chan int)
 	repl.responseReceiver = state.replicationReceiver
 	repl.leaderState = state
-	repl.activeTasks = make(map[uint32]*ReplicationResult)
-	repl.startReplicationProcess(uint32(len(repl.leaderState.peers)))
+	repl.activeTasks = make(map[string]*ReplicationResult)
+	go repl.startReplicationProcess()
 	return repl
 }
 
 
-func (repl *Replication) ReplicateToAll(taskId uint32) {
+func (repl *Replication) ReplicateToPeer(peer *Peer) {
+	repl.replChan <- &ReplicationTask{peer, peer.Id, 1}
+}
+
+func (repl *Replication) ReplicateToAll(taskId string, npeers uint32) {
 	//	repl.startReplicationTask(taskId, len(repl.leaderState.peers))
 	for _, peer := range repl.leaderState.peers {
-		repl.replChan <- &ReplicationTask{peer, taskId}
+		repl.replChan <- &ReplicationTask{peer, taskId, npeers}
 	}
 }
 
@@ -60,25 +66,24 @@ func (repl *Replication) Stop() {
 	repl.stop <- 1
 }
 
-func (repl *Replication) startReplicationProcess(npeers uint32) {
+func (repl *Replication) startReplicationProcess() {
 	for {
 		select {
 		case replTask := <-repl.replChan:
-			_, ok := repl.activeTasks[replTask.taskId]
-			if !ok {
-				repl.activeTasks[replTask.taskId] = &ReplicationResult{replTask.taskId, 0, 0, 0, 0}
+			if _, ok := repl.activeTasks[replTask.taskId]; !ok {
+				repl.activeTasks[replTask.taskId] = &ReplicationResult{replTask.taskId, replTask.npeers, 0, 0, 0, 0}
 			}
 			go repl.replicateToPeer(replTask)
 		case peerResult := <-repl.peerReplReceiver:
 			task := repl.activeTasks[peerResult.taskId]
-			task.TotalCount += 1
+			task.ProcessedCount += 1
 			switch peerResult.code {
 			case ERROR:
 				task.FailedCount += 1
 			case SUCCESS:
 				task.SuccessCount += 1
 			}
-			if task.TotalCount == npeers {
+			if task.TotalCount == task.ProcessedCount {
 				repl.responseReceiver <- task
 				delete(repl.activeTasks, peerResult.taskId)
 			}
@@ -114,12 +119,16 @@ func (repl *Replication) replicateToPeer(replTask *ReplicationTask) {
 }
 
 func (repl *Replication) buildAppendArgs(peer *Peer) *protocol.AppendArgs {
-	state := repl.leaderState
-	server := state.raftNode
+	server := repl.leaderState.raftNode
 	args := new(protocol.AppendArgs)
 	args.LeaderCommit = server.State.CommitIndex
 	args.PrevLogIndex = peer.NextIndex - 1
-	args.PrevLogTerm = server.State.Store.FindByIndex(peer.NextIndex - 1).Term
+	logItem := server.State.Store.FindByIndex(peer.NextIndex - 1)
+	if logItem == nil {
+		args.PrevLogTerm = 1
+	}else {
+		args.PrevLogTerm = logItem.Term
+	}
 	args.LeaderId = server.Id
 	args.Term = server.State.Term
 	args.Entries = server.State.Store.GetAllItemsAfter(peer.NextIndex - 1)

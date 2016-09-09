@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"time"
 )
 
@@ -60,7 +59,7 @@ func NewUpdateStateEvent(id uint16, time time.Time) Event {
 	return &UpdateStateEvent{ServerEvent{id, time}}
 }
 
-func NewUpdateParamsEvent(id uint16, time time.Time, payload interface{}) Event {
+func NewServerRequestEvent(id uint16, time time.Time, payload interface{}) Event {
 	return &ServerRequestEvent{ServerEvent{id, time}, payload}}
 
 
