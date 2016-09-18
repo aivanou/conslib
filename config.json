@@ -1,0 +1,10 @@
+{
+  "raft": {
+    "leader": {
+      "peer_timeout": 2000
+    },
+    "follower": {
+      "timeout": 3000
+    }
+  }
+}
