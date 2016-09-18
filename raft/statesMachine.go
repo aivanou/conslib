@@ -5,7 +5,7 @@ import "math/rand"
 type State interface {
 	Id() int
 	Name() string
-	OnInit(data interface{}) error
+	OnInit(data interface{}, raftConfig *RaftConfig) error
 	OnStateStarted() error
 	OnStateFinished() error
 	Process(eventId uint16, data interface{}) error
@@ -46,9 +46,9 @@ type NodeStateHandler struct {
 	activeState State
 }
 
-func NewStateHandler(raftNode *RaftNode) StateHandler {
+func NewStateHandler(raftNode *RaftNode, raftConfig *RaftConfig) StateHandler {
 	rand.Seed(int64(hash(raftNode.Id)))
-	followerState := &FollowerState{NodeState{FOLLOWER_ID, "FOLLOWER"}, randomDuration(1000), nil, raftNode, make(map[uint16]eventProcessor)}
+	followerState := &FollowerState{NodeState{FOLLOWER_ID, "FOLLOWER"}, randomDuration(raftConfig.Follower.Timeout), nil, raftNode, make(map[uint16]eventProcessor)}
 	candidateState := &CandidateState{NodeState{CANDIDATE_ID, "CANDIDATE"}, raftNode}
 	leaderState := NewLeaderState(NodeState{LEADER_ID, "LEADER"}, raftNode)
 	states := make(map[int]State)
@@ -56,7 +56,7 @@ func NewStateHandler(raftNode *RaftNode) StateHandler {
 	states[CANDIDATE_ID] = candidateState
 	states[LEADER_ID] = leaderState
 	for _, state := range states {
-		state.OnInit(raftNode)
+		state.OnInit(raftNode, raftConfig)
 	}
 	return &NodeStateHandler{states, followerState}
 }

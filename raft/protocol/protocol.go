@@ -20,6 +20,8 @@ func (host Host) String() string {
 type RaftEventHandler interface {
 	OnAppendEntriesReceived(args *AppendArgs, result *AppendResult) error
 	OnRequestVoteReceived(args *RequestArgs, result *RequestResult) error
+	OnWriteLogRequestReceived(args *WriteLogRequest, result *WriteLogResponse) error
+	OnSnapshotRequestReceived(args *NodeSnapshotRequest, result*NodeSnapshotResponse) error
 }
 
 type Protocol interface {

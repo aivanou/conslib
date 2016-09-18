@@ -13,7 +13,7 @@ type FollowerState struct {
 	eventFunctions map[uint16]eventProcessor
 }
 
-func (state *FollowerState) OnInit(data interface{}) error {
+func (state *FollowerState) OnInit(data interface{}, raftConfig *RaftConfig) error {
 	state.eventFunctions[RESET_TIMER] = state.resetTimer
 	return nil
 }
@@ -50,7 +50,6 @@ func (state *FollowerState) Process(eventId uint16, data interface{}) error {
 
 func (state *FollowerState) resetTimer(data interface{}) error {
 	if state.Timer != nil {
-		log.Println(state.raftServer.Id, "RESETTING TIMER EVENT WAS TRIGGERED: resetting to ", state.Duration)
 		wasActive := state.Timer.Reset(time.Millisecond * state.Duration)
 		if !wasActive {
 			log.Println("Follower Timer is not Active!!")

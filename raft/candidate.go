@@ -10,7 +10,7 @@ type CandidateState struct {
 	raftServer *RaftNode
 }
 
-func (state *CandidateState) OnInit(data interface{}) error {
+func (state *CandidateState) OnInit(data interface{}, raftConfig *RaftConfig) error {
 	return nil
 }
 

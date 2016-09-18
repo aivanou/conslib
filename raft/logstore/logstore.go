@@ -229,9 +229,12 @@ func (store *LogStore) findOrNextGreater(index uint32) *LogStoreNode {
 	if store.head == nil {
 		return nil
 	}
+	if index < store.head.Index {
+		return store.head
+	}
 	item := store.head
 	for item != nil {
-		if item.Index >= index {
+		if item.Index > index {
 			return item
 		}
 		item = item.next
@@ -268,7 +271,7 @@ func (store *LogStore) Print() {
 func (store *LogStore) print() {
 	curr := store.head
 	for curr != nil {
-		log.Printf("[%d:%d]->", curr.Index, curr.Term)
+		log.Printf("[%d:%d,%d]->", curr.Index, curr.Term, curr.Data)
 		curr = curr.next
 	}
 	log.Println()

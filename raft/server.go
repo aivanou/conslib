@@ -27,10 +27,11 @@ type RaftNode struct {
 }
 
 func main() {
-	run()
+	raftConfig := ReadConfig()
+	run(raftConfig)
 }
 
-func run() {
+func run(raftConfig *RaftConfig) {
 	args := os.Args[1:]
 	id, servers := parse(args)
 
@@ -46,7 +47,7 @@ func run() {
 		srv := &Server{sid, addr, nil}
 		addServer(s, srv)
 	}
-	stateHandler := NewStateHandler(s)
+	stateHandler := NewStateHandler(s, raftConfig)
 	s.stateHandler = stateHandler
 	go s.eventProcessor.ProcessEvents()
 	var wg sync.WaitGroup
@@ -129,7 +130,13 @@ func (server *RaftNode) OnAppendEntriesReceived(args *protocol.AppendArgs, resul
 		eventId = RESET_TIMER
 		serverStateEvent = NewServerRequestEvent(eventId, time.Now(), nil)
 	}
-	log.Debug(server.Id, " Received APPEND_ENTRIES_RPC. My Term: ", server.State.Term, " My state: ", server.stateHandler.GetActiveState().Name(), " Leader term: ", args.Term, " Leader ID: ", args.LeaderId)
+	log.Debug(server.Id, " Received APPEND_ENTRIES_RPC. My Term: ", server.State.Term,
+		" My state: ", server.stateHandler.GetActiveState().Name(),
+		" Leader term: ", args.Term, " Leader ID: ", args.LeaderId,
+		" Logs: ", len(args.Entries), " My store: ", server.State.Store.Size())
+	if server.Id == "id2" {
+		server.State.Store.Print()
+	}
 	eventLoop := server.eventProcessor
 	updateParamsEvent := NewServerRequestEvent(UPDATE_SERVER, time.Now(), &UpdateServerPayload{args.Term})
 	if serverState != nil {
@@ -155,8 +162,10 @@ func (server *RaftNode) OnAppendEntriesReceived(args *protocol.AppendArgs, resul
 		server.State.Store.RemoveAfterIncl(lastLogItem.Index)
 		result.Success = false
 	}else if lastLogItem.Index < args.PrevLogIndex {
+		log.Debug(server.Id, " LastLogItem.Index ", lastLogItem.Index, " < ", args.PrevLogIndex, " returning false")
 		result.Success = false
 	} else if (lastLogItem.Index == args.PrevLogIndex && lastLogItem.Term != args.PrevLogTerm) {
+		log.Debug(server.Id, " lastLogTerm: ", lastLogItem.Term, " != ", args.PrevLogTerm)
 		server.State.Store.RemoveByIndex(lastLogItem.Index)
 		result.Success = false
 	} else {
@@ -208,6 +217,44 @@ func (server *RaftNode) OnRequestVoteReceived(args *protocol.RequestArgs, result
 		result.Term = server.State.Term
 	}
 	return nil
+}
+
+func (server *RaftNode) IsLeader() bool {
+	return server.stateHandler.GetActiveState().Id() == LEADER_ID
+}
+
+func (server *RaftNode)OnWriteLogRequestReceived(args *protocol.WriteLogRequest, result *protocol.WriteLogResponse) error {
+	if !server.IsLeader() {
+		result.Status = 0
+		return nil
+	}
+	resp := server.execRequest(args.Data)
+	result.Status = resp.success
+	return nil
+}
+
+func (server* RaftNode) OnSnapshotRequestReceived(args *protocol.NodeSnapshotRequest, result *protocol.NodeSnapshotResponse) error {
+	raftState := server.State
+	store := raftState.Store
+	result.Id = server.Id
+	result.Term = raftState.Term
+	result.State = server.stateHandler.GetActiveState().Name()
+	result.CommitIndex = raftState.CommitIndex
+	result.LastAppliedIndex = raftState.LastAppliedIndex
+	if item := store.LastLogItem(); item != nil {
+		result.LastLogIndex = item.Index
+		result.LastLogTerm = item.Term
+	}
+	result.LogSize = store.Size()
+	return nil
+}
+
+func (server *RaftNode) execRequest(data uint64) *WriteResponse {
+	responseChan := make(chan uint32)
+	writeRequest := &WriteRequest{"500", data, responseChan}
+	server.eventProcessor.Trigger(NewServerRequestEvent(WRITE_LOG, time.Now(), writeRequest))
+	resp := <-responseChan
+	return &WriteResponse{resp}
 }
 
 

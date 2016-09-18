@@ -67,6 +67,16 @@ func TestAppendLogItemObjects(t *testing.T) {
 		store.AppendLogItem(&it)
 	}
 	assert.Equal(t, uint32(10), store.Size())
+	assert.Equal(t, uint32(10), store.LastLogItem().Index)
+}
+
+func TestGetLogsAfter(t *testing.T) {
+	store := NewLogStore()
+	items := GenRandomLogItems(10, uint64(1), uint32(1))
+	for _, it := range items {
+		store.AppendLogItem(&it)
+	}
+	assert.Equal(t, 10, len(store.GetAllItemsAfter(0)))
 }
 
 func GenRandomLogItems(size int, term uint64, startIndex uint32) []LogItem {

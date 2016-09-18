@@ -1,5 +1,8 @@
 package protocol
-import "consensus/raft/logstore"
+import (
+	"consensus/raft/logstore"
+	"fmt"
+)
 
 
 type RequestArgs struct {
@@ -38,4 +41,36 @@ type RegisterServerArgs struct {
 type RegisterServerResult struct {
 	Status string
 	Code   int
+}
+
+type WriteLogRequest struct {
+	Data uint64
+}
+
+type WriteLogResponse struct {
+	Status uint32
+}
+
+type NodeSnapshotRequest struct {
+
+}
+
+type NodeSnapshotResponse struct {
+	Id               string
+	State            string
+	Term             uint64
+	CommitIndex      uint32
+	LastAppliedIndex uint32
+	LastLogIndex     uint32
+	LastLogTerm      uint64
+	LogSize          uint32
+}
+
+func (resp *NodeSnapshotResponse) String() string {
+	return fmt.Sprintf(`[id:%s, State:%s, Term:%d, CommitIndex:%d,
+						LastAppliedIndex:%d, LastLogIndex:%d,
+						LastLogTerm:%d, LogSize:%d]`,
+		resp.Id, resp.State, resp.Term, resp.CommitIndex,
+		resp.LastAppliedIndex, resp.LastLogIndex, resp.LastLogTerm,
+		resp.LogSize)
 }

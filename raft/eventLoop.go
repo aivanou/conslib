@@ -123,7 +123,7 @@ func (eventProcessor *EventProcessor) updateServerParams(event *ServerRequestEve
 		return
 	}
 	server := eventProcessor.server
-	log.Println(server.Id, "Updating server params: ", server.State.Term, "->", param.Term)
+	log.Debug(server.Id, "Updating server params: ", server.State.Term, "->", param.Term)
 	if server.State.Term < param.Term {
 		server.State.UpdateTerm(param.Term)
 	}

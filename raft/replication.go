@@ -70,6 +70,7 @@ func (repl *Replication) startReplicationProcess() {
 	for {
 		select {
 		case replTask := <-repl.replChan:
+			log.Debug(repl.leaderState.NodeId(), "Received task: ", replTask.taskId, " for peer: ", replTask.peer.Id)
 			if _, ok := repl.activeTasks[replTask.taskId]; !ok {
 				repl.activeTasks[replTask.taskId] = &ReplicationResult{replTask.taskId, replTask.npeers, 0, 0, 0, 0}
 			}
@@ -84,6 +85,7 @@ func (repl *Replication) startReplicationProcess() {
 				task.SuccessCount += 1
 			}
 			if task.TotalCount == task.ProcessedCount {
+				log.Debug(repl.leaderState.raftNode.Id, "Replication finished, sending response: ", task.TaskId, " ", task.SuccessCount, task.FailedCount)
 				repl.responseReceiver <- task
 				delete(repl.activeTasks, peerResult.taskId)
 			}
@@ -100,6 +102,7 @@ func (repl *Replication) replicateToPeer(replTask *ReplicationTask) {
 	server := repl.leaderState.raftNode
 	args := repl.buildAppendArgs(replTask.peer)
 	reply, err := repl.sendToPeer(replTask.peer.Id, args)
+	log.Debug(repl.leaderState.raftNode.Id, "Received response from peer: ", replTask.peer.Id, "status:", reply.Success)
 	switch  {
 	case err != nil:
 		repl.peerReplReceiver <- &ReplStatus{ERROR, replTask.taskId}
@@ -107,8 +110,6 @@ func (repl *Replication) replicateToPeer(replTask *ReplicationTask) {
 		eventLoop := server.eventProcessor
 		eventLoop.Trigger(NewUpdateStateEvent(BECOME_FOLLOWER, time.Now()))
 		repl.peerReplReceiver <- &ReplStatus{ERROR, replTask.taskId}
-	//TODO: repl.leaderState.stop <- true
-	//change to follower
 	case !reply.Success:
 		replTask.peer.NextIndex -= 1
 		repl.replChan <- replTask
