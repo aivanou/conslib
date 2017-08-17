@@ -1,7 +1,7 @@
 package main
 import (
 	"sync/atomic"
-	"consensus/raft/logstore"
+	"github.com/tierex/conslib/raft/logstore"
 )
 
 

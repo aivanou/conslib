@@ -2,10 +2,11 @@ package main
 
 import (
 	"testing"
-	"consensus/raft/protocol"
-	"consensus/raft/logstore"
+
 	"github.com/stretchr/testify/assert"
-//	"github.com/Sirupsen/logrus"
+	"github.com/tierex/conslib/raft/logstore"
+	"github.com/tierex/conslib/raft/protocol"
+	//	"github.com/Sirupsen/logrus"
 )
 
 func TestOnAppendEntriesRPCEventsTriggered(t *testing.T) {
@@ -91,7 +92,7 @@ func TestAppendEntriesRPCWhenReqLogIsGreater(t *testing.T) {
 	res.Success = false
 	for !res.Success {
 		s.OnAppendEntriesReceived(&protocol.AppendArgs{1, "id2", prevLogIndex, 1, 1, items}, res)
-		prevLogIndex -= 1
+		prevLogIndex--
 	}
 	assert.Equal(t, uint32(20), store.Size())
 }
@@ -157,7 +158,7 @@ func (s *MockState) Id() int {
 func (s *MockState) Name() string {
 	return s.name
 }
-func (s *MockState) OnInit(data interface{}) error {
+func (s *MockState) OnInit(data interface{}, rf *RaftConfig) error {
 	return nil
 }
 
@@ -188,7 +189,6 @@ func (h *MockStateHandler) ChangeState(newStateId int) error {
 	return nil
 }
 
-
 type MockEventLoop struct {
 	eventsCount map[uint16]int
 }
@@ -199,10 +199,11 @@ func (el *MockEventLoop) Trigger(event Event) error {
 		el.Trigger(chEvent.event)
 		el.Trigger(chEvent.next)
 	}
-	_, ok := el.eventsCount[event.Id()]; if !ok {
+	_, ok := el.eventsCount[event.Id()]
+	if !ok {
 		el.eventsCount[event.Id()] = 1
-	}else {
-		el.eventsCount[event.Id()] += 1
+	} else {
+		el.eventsCount[event.Id()]++
 	}
 
 	return nil

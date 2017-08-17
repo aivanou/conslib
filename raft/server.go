@@ -2,22 +2,23 @@ package main
 
 import (
 	"os"
-	"time"
 	"sync"
-	"consensus/raft/protocol"
-	"consensus/raft/logstore"
+	"time"
+
+	"github.com/tierex/conslib/raft/logstore"
+	"github.com/tierex/conslib/raft/protocol"
 )
 
-
+// Server bla
 type Server struct {
-	Id      string
+	ID      string
 	Address *protocol.Host
 	sender  protocol.Sender
 }
 
-
+// RaftNode bla
 type RaftNode struct {
-	Id                   string
+	ID                   string
 	Servers              map[string]*Server
 	State                *RaftState
 	LastChangedStateTime time.Time
@@ -43,12 +44,11 @@ func run(raftConfig *RaftConfig) {
 		if sport == servers[id] {
 			continue
 		}
-		addr := &protocol.Host{"localhost", sport}
+		addr := &protocol.Host{Domain: "localhost", Port: sport}
 		srv := &Server{sid, addr, nil}
 		addServer(s, srv)
 	}
-	stateHandler := NewStateHandler(s, raftConfig)
-	s.stateHandler = stateHandler
+	s.stateHandler = NewStateHandler(s, raftConfig)
 	go s.eventProcessor.ProcessEvents()
 	var wg sync.WaitGroup
 	wg.Add(3)
@@ -56,9 +56,9 @@ func run(raftConfig *RaftConfig) {
 }
 
 func newServer(id string, port int) *RaftNode {
-	var addr = &protocol.Host{"localhost", port}
+	var addr = &protocol.Host{Domain: "localhost", Port: port}
 	var server = &RaftNode{
-		Id:id,
+		ID:    id,
 		State: &RaftState{1, "", 0, 0, 0, logstore.NewLogStore()},
 	}
 	server.protocol = protocol.NewProtocol()
@@ -69,17 +69,19 @@ func newServer(id string, port int) *RaftNode {
 	return server
 }
 
+// SendAppend bla
 func (server *RaftNode) SendAppend(destServerId string, args *protocol.AppendArgs) (*protocol.AppendResult, error) {
-	log.Debug(server.Id, " Sending APPEND_RPC to ", destServerId, " at time: ", time.Now())
+	log.Debug(server.ID, " Sending APPEND_RPC to ", destServerId, " at time: ", time.Now())
 	destServer := server.Servers[destServerId]
 	reply, err := destServer.sender.SendAppend(args)
 	if err != nil {
-		log.Println(server.Id, "Append RPC error:", err)
+		log.Println(server.ID, "Append RPC error:", err)
 		return nil, err
 	}
 	return reply, nil
 }
 
+// SendRequestVotes bla
 func (server *RaftNode) SendRequestVotes(wg *sync.WaitGroup) {
 	for _, srv := range server.Servers {
 		go func(rnode *RaftNode, destServer *Server, barrier *sync.WaitGroup) {
@@ -90,11 +92,11 @@ func (server *RaftNode) SendRequestVotes(wg *sync.WaitGroup) {
 }
 
 func (server *RaftNode) sendRequestVoteRPC(destServer *Server) error {
-	log.Debug(server.Id, " :Sending REQUEST_VOTE_RPC to: ", destServer.Id)
-	reqArgs := &protocol.RequestArgs{server.State.Term, 1, 1, server.Id}
+	log.Debug(server.ID, " :Sending REQUEST_VOTE_RPC to: ", destServer.ID)
+	reqArgs := &protocol.RequestArgs{Term: server.State.Term, LastLogIndex: 1, LastLogTerm: 1, CandidateId: server.ID}
 	reply, err := destServer.sender.SendRequestVote(reqArgs)
 	if err != nil {
-		log.Println(server.Id, " Error during Info.RequestVote: ", err)
+		log.Println(server.ID, " Error during Info.RequestVote: ", err)
 		return err
 	}
 	if reply.Term > server.State.Term {
@@ -110,9 +112,7 @@ func (server *RaftNode) sendRequestVoteRPC(destServer *Server) error {
 	return nil
 }
 
-/**
-* This function is triggered every time when another server sends APPEND_ENTRIES RPC request.
-*/
+// OnAppendEntriesReceived blab bla
 func (server *RaftNode) OnAppendEntriesReceived(args *protocol.AppendArgs, result *protocol.AppendResult) error {
 	serverTerm := server.State.Term
 	if serverTerm > args.Term {
@@ -120,23 +120,20 @@ func (server *RaftNode) OnAppendEntriesReceived(args *protocol.AppendArgs, resul
 		result.Term = server.State.Term
 		return nil
 	}
-	var eventId uint16
+	var eventID uint16
 	serverState := server.stateHandler.GetActiveState()
-	var serverStateEvent Event = nil
+	var serverStateEvent Event
 	if serverTerm < args.Term {
-		eventId = BECOME_FOLLOWER
-		serverStateEvent = NewUpdateStateEvent(eventId, time.Now())
+		eventID = BECOME_FOLLOWER
+		serverStateEvent = NewUpdateStateEvent(eventID, time.Now())
 	} else if serverState.Id() == FOLLOWER_ID {
-		eventId = RESET_TIMER
-		serverStateEvent = NewServerRequestEvent(eventId, time.Now(), nil)
+		eventID = RESET_TIMER
+		serverStateEvent = NewServerRequestEvent(eventID, time.Now(), nil)
 	}
-	log.Debug(server.Id, " Received APPEND_ENTRIES_RPC. My Term: ", server.State.Term,
+	log.Debug(server.ID, " Received APPEND_ENTRIES_RPC. My Term: ", server.State.Term,
 		" My state: ", server.stateHandler.GetActiveState().Name(),
 		" Leader term: ", args.Term, " Leader ID: ", args.LeaderId,
 		" Logs: ", len(args.Entries), " My store: ", server.State.Store.Size())
-	if server.Id == "id2" {
-		server.State.Store.Print()
-	}
 	eventLoop := server.eventProcessor
 	updateParamsEvent := NewServerRequestEvent(UPDATE_SERVER, time.Now(), &UpdateServerPayload{args.Term})
 	if serverState != nil {
@@ -144,54 +141,52 @@ func (server *RaftNode) OnAppendEntriesReceived(args *protocol.AppendArgs, resul
 	}
 	result.Success = true
 	result.Term = args.Term
-	lastLogItem := server.State.Store.LastLogItem()
+	var lastLogItem = server.State.Store.LastLogItem()
 	if lastLogItem == nil {
-		log.Debug(server.Id, " Appending new entries, because I have no entries")
+		log.Debug(server.ID, " Appending new entries, because I have no entries")
 		for _, li := range args.Entries {
 			server.State.Store.AppendLogItem(&li)
 		}
-		if (args.LeaderCommit > server.State.CommitIndex) {
-			lastLogItem := server.State.Store.LastLogItem()
+		if args.LeaderCommit > server.State.CommitIndex {
+			lastLogItem = server.State.Store.LastLogItem()
 			if lastLogItem != nil {
 				server.State.UpdateCommitIndex(min(args.LeaderCommit, lastLogItem.Index))
 			}
 		}
-	}else if lastLogItem.Index > args.PrevLogIndex {
-		log.Debug(server.Id, "Don't grant entry, because: my LastLogIndex:", lastLogItem.Index, " greater than: ", args.PrevLogIndex)
+	} else if lastLogItem.Index > args.PrevLogIndex {
+		log.Debug(server.ID, "Don't grant entry, because: my LastLogIndex:", lastLogItem.Index, " greater than: ", args.PrevLogIndex)
 		// if lastLog in server's store has greater index than PrevLogIndex, remove all entries after lastLog.Index, and reply false
 		server.State.Store.RemoveAfterIncl(lastLogItem.Index)
 		result.Success = false
-	}else if lastLogItem.Index < args.PrevLogIndex {
-		log.Debug(server.Id, " LastLogItem.Index ", lastLogItem.Index, " < ", args.PrevLogIndex, " returning false")
+	} else if lastLogItem.Index < args.PrevLogIndex {
+		log.Debug(server.ID, " LastLogItem.Index ", lastLogItem.Index, " < ", args.PrevLogIndex, " returning false")
 		result.Success = false
-	} else if (lastLogItem.Index == args.PrevLogIndex && lastLogItem.Term != args.PrevLogTerm) {
-		log.Debug(server.Id, " lastLogTerm: ", lastLogItem.Term, " != ", args.PrevLogTerm)
+	} else if lastLogItem.Index == args.PrevLogIndex && lastLogItem.Term != args.PrevLogTerm {
+		log.Debug(server.ID, " lastLogTerm: ", lastLogItem.Term, " != ", args.PrevLogTerm)
 		server.State.Store.RemoveByIndex(lastLogItem.Index)
 		result.Success = false
 	} else {
 		for _, li := range args.Entries {
 			server.State.Store.AppendLogItem(&li)
 		}
-		if (args.LeaderCommit > server.State.CommitIndex) {
+		if args.LeaderCommit > server.State.CommitIndex {
 			server.State.UpdateCommitIndex(min(args.LeaderCommit, server.State.Store.LastLogItem().Index))
 		}
 	}
 	return nil
 }
 
-/**
-* This function is triggered every time when another server sends REQUEST_VOTE RPC request.
-*/
+// OnRequestVoteReceived blab bla
 func (server *RaftNode) OnRequestVoteReceived(args *protocol.RequestArgs, result *protocol.RequestResult) error {
-	log.Println(server.Id, "Received RequestVote from", args.CandidateId)
+	log.Println(server.ID, "Received RequestVote from", args.CandidateId)
 	var serverTerm = server.State.Term
 	if serverTerm > args.Term {
 		result.VoteGranted = false
 		result.Term = serverTerm
-		log.Println(server.Id, "Not granting vote to:", args.CandidateId, "because my Term is greater")
+		log.Println(server.ID, "Not granting vote to:", args.CandidateId, "because my Term is greater")
 		return nil
 	} else if serverTerm < args.Term {
-		log.Println(server.Id, "Received requestVote from server", args.CandidateId, "that has greater Term, Granting vote")
+		log.Println(server.ID, "Received requestVote from server", args.CandidateId, "that has greater Term, Granting vote")
 		eventLoop := server.eventProcessor
 		serverChangeStateEvent := NewUpdateStateEvent(BECOME_FOLLOWER, time.Now())
 		serverUpdateEvent := NewServerRequestEvent(UPDATE_SERVER, time.Now(), &UpdateServerPayload{args.Term})
@@ -203,27 +198,29 @@ func (server *RaftNode) OnRequestVoteReceived(args *protocol.RequestArgs, result
 		store := server.State.Store
 		lastLogItem := store.LastLogItem()
 		if lastLogItem == nil || (lastLogItem.Index <= args.LastLogIndex && lastLogItem.Term <= args.LastLogTerm) {
-			log.Println(server.Id, " Received RequestVote from", args.CandidateId, "Granting vote")
+			log.Println(server.ID, " Received RequestVote from", args.CandidateId, "Granting vote")
 			server.State.VotedFor = args.CandidateId
 			result.VoteGranted = true
 			result.Term = args.Term
-		}else {
+		} else {
 			result.VoteGranted = false
 			result.Term = server.State.Term
 		}
-	}else if server.State.VotedFor != "" {
-		log.Debug(server.Id, " Received RequestVote from", args.CandidateId, "Not Granting vote because already granted to: ", server.State.VotedFor)
+	} else if server.State.VotedFor != "" {
+		log.Debug(server.ID, " Received RequestVote from", args.CandidateId, "Not Granting vote because already granted to: ", server.State.VotedFor)
 		result.VoteGranted = false
 		result.Term = server.State.Term
 	}
 	return nil
 }
 
+// IsLeader bla
 func (server *RaftNode) IsLeader() bool {
 	return server.stateHandler.GetActiveState().Id() == LEADER_ID
 }
 
-func (server *RaftNode)OnWriteLogRequestReceived(args *protocol.WriteLogRequest, result *protocol.WriteLogResponse) error {
+// OnWriteLogRequestReceived bla bla
+func (server *RaftNode) OnWriteLogRequestReceived(args *protocol.WriteLogRequest, result *protocol.WriteLogResponse) error {
 	if !server.IsLeader() {
 		result.Status = 0
 		return nil
@@ -233,10 +230,11 @@ func (server *RaftNode)OnWriteLogRequestReceived(args *protocol.WriteLogRequest,
 	return nil
 }
 
-func (server* RaftNode) OnSnapshotRequestReceived(args *protocol.NodeSnapshotRequest, result *protocol.NodeSnapshotResponse) error {
+// OnSnapshotRequestReceived blabla
+func (server *RaftNode) OnSnapshotRequestReceived(args *protocol.NodeSnapshotRequest, result *protocol.NodeSnapshotResponse) error {
 	raftState := server.State
 	store := raftState.Store
-	result.Id = server.Id
+	result.Id = server.ID
 	result.Term = raftState.Term
 	result.State = server.stateHandler.GetActiveState().Name()
 	result.CommitIndex = raftState.CommitIndex
@@ -257,13 +255,12 @@ func (server *RaftNode) execRequest(data uint64) *WriteResponse {
 	return &WriteResponse{resp}
 }
 
-
 func hasMajority(server *RaftNode) bool {
-	return server.State.VotesReceived >= uint32(len(server.Servers) / 2 + 1)
+	return server.State.VotesReceived >= uint32(len(server.Servers)/2+1)
 }
 
-func addServer(server*RaftNode, newServer *Server) {
-	if _, ok := server.Servers[newServer.Id]; ok {
+func addServer(server *RaftNode, newServer *Server) {
+	if _, ok := server.Servers[newServer.ID]; ok {
 		return
 	}
 	prot := server.protocol
@@ -272,5 +269,5 @@ func addServer(server*RaftNode, newServer *Server) {
 		log.Fatal("Error while initialising sender for ", newServer.Address.String())
 	}
 	newServer.sender = sender
-	server.Servers[newServer.Id] = newServer
+	server.Servers[newServer.ID] = newServer
 }

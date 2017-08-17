@@ -1,9 +1,10 @@
 package protocol
-import (
-	"consensus/raft/logstore"
-	"fmt"
-)
 
+import (
+	"fmt"
+
+	"github.com/tierex/conslib/raft/logstore"
+)
 
 type RequestArgs struct {
 	Term         uint64
@@ -16,7 +17,6 @@ type RequestResult struct {
 	Term        uint64
 	VoteGranted bool
 }
-
 
 type AppendArgs struct {
 	Term         uint64
@@ -52,7 +52,6 @@ type WriteLogResponse struct {
 }
 
 type NodeSnapshotRequest struct {
-
 }
 
 type NodeSnapshotResponse struct {

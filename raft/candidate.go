@@ -1,9 +1,9 @@
 package main
+
 import (
 	"sync"
 	"time"
 )
-
 
 type CandidateState struct {
 	NodeState
@@ -18,7 +18,7 @@ func (state *CandidateState) OnStateStarted() error {
 	server := state.raftServer
 	server.State.IncTerm()
 	server.State.IncVotesForTerm()
-	server.State.VotedFor = server.Id
+	server.State.VotedFor = server.ID
 	var wg sync.WaitGroup
 	wg.Add(len(server.Servers))
 	state.raftServer.SendRequestVotes(&wg)
@@ -27,10 +27,10 @@ func (state *CandidateState) OnStateStarted() error {
 		eventLoop := rnode.eventProcessor
 		//raftNode.hasMajority()
 		if hasMajority(rnode) {
-			log.Println(rnode.Id, "Received response from all servers, becoming LEADER for term ", rnode.State.Term)
+			log.Println(rnode.ID, "Received response from all servers, becoming LEADER for term ", rnode.State.Term)
 			eventLoop.Trigger(NewUpdateStateEvent(BECOME_LEADER, time.Now()))
-		}else {
-			log.Println(rnode.Id, "Received response from all servers, becoming follower for term ", rnode.State.Term)
+		} else {
+			log.Println(rnode.ID, "Received response from all servers, becoming follower for term ", rnode.State.Term)
 			eventLoop.Trigger(NewUpdateStateEvent(BECOME_FOLLOWER, time.Now()))
 		}
 	}(server)

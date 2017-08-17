@@ -26,7 +26,7 @@ type FollowerConfig struct {
 
 // Reads info from config file
 func ReadConfig() *RaftConfig {
-	file, e := ioutil.ReadFile("./src/consensus/config.json")
+	file, e := ioutil.ReadFile("./src/github.com/tierex/conslib/config.json")
 	if e != nil {
 		fmt.Printf("File error: %v\n", e)
 		os.Exit(1)

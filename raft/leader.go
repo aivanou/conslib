@@ -1,11 +1,12 @@
 package main
+
 import (
-	"time"
 	"errors"
+	"time"
 )
 
 type WriteRequest struct {
-	taskId       string
+	taskID       string
 	data         uint64
 	responseChan chan uint32
 }
@@ -21,7 +22,6 @@ func NewLeaderState(nodeState NodeState, raftNode *RaftNode) *LeaderState {
 	return leaderState
 }
 
-
 type LeaderState struct {
 	NodeState
 	peers                map[string]*Peer
@@ -36,10 +36,10 @@ type LeaderState struct {
 	activeTasks          map[string]chan uint32
 }
 
-
+// OnInit blabla
 func (state *LeaderState) OnInit(data interface{}, raftConfig *RaftConfig) error {
 	slaves := make(map[string]*Peer)
-	for id, _ := range state.raftNode.Servers {
+	for id := range state.raftNode.Servers {
 		logItem := state.raftNode.State.Store.LastLogItem()
 		ind := uint32(1)
 		if logItem != nil {
@@ -62,21 +62,20 @@ func (state *LeaderState) OnInit(data interface{}, raftConfig *RaftConfig) error
 }
 
 func (state *LeaderState) NodeId() string {
-	return state.raftNode.Id;
+	return state.raftNode.ID
 }
 
-func (state *LeaderState)processWriteLogRequest(data interface{}) error {
+func (state *LeaderState) processWriteLogRequest(data interface{}) error {
 	req, ok := data.(*WriteRequest)
 	if !ok {
 		return errors.New("Incorrect input data for Write request")
 	}
-	go func() {state.requestReceiver <- req}()
+	go func() { state.requestReceiver <- req }()
 	return nil
 }
 
-
 type Peer struct {
-	Id         string
+	ID         string
 	NextIndex  uint32
 	MatchIndex uint32
 	Duration   time.Duration
@@ -95,35 +94,35 @@ func (state *LeaderState) Stop() error {
 
 func (state *LeaderState) processLoop() {
 	server := state.raftNode
-	log.Debug(server.Id, " Starting leader process loop")
+	log.Debug(server.ID, " Starting leader process loop")
 	for {
 		select {
-		case peerId := <-state.heartbeat:
-			if _, ok := state.ongoingHeartbeatTask[peerId]; !ok {
-				state.replication.ReplicateToPeer(state.peers[peerId])
+		case peerID := <-state.heartbeat:
+			if _, ok := state.ongoingHeartbeatTask[peerID]; !ok {
+				state.replication.ReplicateToPeer(state.peers[peerID])
 			}
 		case req := <-state.requestReceiver:
-			log.Debug(server.Id, "Received request from client: ", req.taskId)
-			state.activeTasks[req.taskId] = req.responseChan
+			log.Debug(server.ID, "Received request from client: ", req.taskID)
+			state.activeTasks[req.taskID] = req.responseChan
 			state.raftNode.State.Store.Append(req.data, state.raftNode.State.Term)
 			lastLogItem := state.raftNode.State.Store.LastLogItem()
 			for _, peer := range state.peers {
 				peer.NextIndex = lastLogItem.Index
 			}
-			state.replication.ReplicateToAll(req.taskId, uint32(len(state.peers)))
+			state.replication.ReplicateToAll(req.taskID, uint32(len(state.peers)))
 		case finishedTask := <-state.replicationReceiver:
-			taskId := finishedTask.TaskId
-			if _, ok := state.activeTasks[taskId]; !ok {
+			taskID := finishedTask.TaskId
+			if _, ok := state.activeTasks[taskID]; !ok {
 				delete(state.ongoingHeartbeatTask, finishedTask.TaskId)
-			}else {
+			} else {
 				lastLogItem := state.raftNode.State.Store.LastLogItem()
 				for _, peer := range state.peers {
 					peer.NextIndex = lastLogItem.Index + 1
 				}
 				state.raftNode.State.UpdateCommitIndex(lastLogItem.Index)
-				log.Debug(server.Id, "Finished task: ", taskId, " data: ", finishedTask.SuccessCount)
-				state.activeTasks[taskId] <- finishedTask.SuccessCount
-				delete(state.activeTasks, taskId)
+				log.Debug(server.ID, "Finished task: ", taskID, " data: ", finishedTask.SuccessCount)
+				state.activeTasks[taskID] <- finishedTask.SuccessCount
+				delete(state.activeTasks, taskID)
 			}
 		case <-state.stop:
 			state.replication.Stop()
@@ -149,7 +148,7 @@ func (state *LeaderState) startHeartbeat() {
 		peer.Ticker = time.NewTicker(time.Millisecond * peer.Duration)
 		go func(peer *Peer) {
 			for _ = range peer.Ticker.C {
-				state.heartbeat <- peer.Id
+				state.heartbeat <- peer.ID
 			}
 		}(peer)
 	}

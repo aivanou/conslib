@@ -1,4 +1,5 @@
 package protocol
+
 import (
 	"log"
 	"net/rpc"
@@ -10,14 +11,13 @@ type Sender interface {
 	SendRegisterServer(id string, host *Host) (*RegisterServerResult, error)
 }
 
-
 type RPCSender struct {
 	protocol  *RPCProtocol
 	RpcClient *rpc.Client
 	destHost  *Host
 }
 
-func (sender *RPCSender)SendRequestVote(args *RequestArgs) (*RequestResult, error) {
+func (sender *RPCSender) SendRequestVote(args *RequestArgs) (*RequestResult, error) {
 	var reply RequestResult
 	log.Println(args.CandidateId, " :Sending request vote to: ", sender.destHost)
 	err := sender.RpcClient.Call("RPCReceiver.RequestVote", args, &reply)
@@ -27,7 +27,6 @@ func (sender *RPCSender)SendRequestVote(args *RequestArgs) (*RequestResult, erro
 	}
 	return &reply, nil
 }
-
 
 func (sender *RPCSender) SendRegisterServer(id string, host *Host) (*RegisterServerResult, error) {
 	var registerServerArgs = &RegisterServerArgs{id, host.Domain, host.Port}

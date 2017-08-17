@@ -24,15 +24,14 @@ func (state *NodeState) Name() string {
 	return state.name
 }
 
-
 func (nodeState *NodeState) String() string {
 	return nodeState.name
 }
 
 const (
-	FOLLOWER_ID = 1
+	FOLLOWER_ID  = 1
 	CANDIDATE_ID = 2
-	LEADER_ID = 3
+	LEADER_ID    = 3
 )
 
 type StateHandler interface {
@@ -47,7 +46,7 @@ type NodeStateHandler struct {
 }
 
 func NewStateHandler(raftNode *RaftNode, raftConfig *RaftConfig) StateHandler {
-	rand.Seed(int64(hash(raftNode.Id)))
+	rand.Seed(int64(hash(raftNode.ID)))
 	followerState := &FollowerState{NodeState{FOLLOWER_ID, "FOLLOWER"}, randomDuration(raftConfig.Follower.Timeout), nil, raftNode, make(map[uint16]eventProcessor)}
 	candidateState := &CandidateState{NodeState{CANDIDATE_ID, "CANDIDATE"}, raftNode}
 	leaderState := NewLeaderState(NodeState{LEADER_ID, "LEADER"}, raftNode)
@@ -62,11 +61,11 @@ func NewStateHandler(raftNode *RaftNode, raftConfig *RaftConfig) StateHandler {
 }
 
 func (handler *NodeStateHandler) GetActiveState() State {
-	return handler.activeState;
+	return handler.activeState
 }
 
 func (handler *NodeStateHandler) GetStateById(id int) State {
-	return handler.states[id];
+	return handler.states[id]
 }
 
 func (handler *NodeStateHandler) ChangeState(newStateId int) error {

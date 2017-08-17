@@ -1,4 +1,5 @@
 package main
+
 import (
 	"time"
 )
@@ -20,20 +21,20 @@ func (state *FollowerState) OnInit(data interface{}, raftConfig *RaftConfig) err
 
 func (state *FollowerState) OnStateStarted() error {
 	server := state.raftServer
-	log.Println(server.Id, ": Starting follower timer")
+	log.Println(server.ID, ": Starting follower timer")
 	if state.Timer != nil {
 		wasActive := state.Timer.Reset(time.Millisecond * state.Duration)
 		if !wasActive {
-			log.Println(server.Id, "timer was in stop state, recreating timer")
+			log.Println(server.ID, "timer was in stop state, recreating timer")
 		}
 		return nil
-	}else {
+	} else {
 		state.Timer = time.NewTimer(time.Millisecond * state.Duration)
 	}
 	go func(cState *FollowerState) {
 		<-cState.Timer.C
 		eventLoop := cState.raftServer.eventProcessor
-		log.Println(cState.raftServer.Id, "triggering BECOME_CANDIDATE event")
+		log.Println(cState.raftServer.ID, "triggering BECOME_CANDIDATE event")
 		eventLoop.Trigger(NewUpdateStateEvent(BECOME_CANDIDATE, time.Now()))
 	}(state)
 	return nil

@@ -1,8 +1,5 @@
 package protocol
 
-import (
-)
-
 type Receiver interface {
 	RegisterServer(args *RegisterServerArgs, result *RegisterServerResult) error
 	AppendEntries(args *AppendArgs, result *AppendResult) error
@@ -31,6 +28,6 @@ func (receiver *RPCReceiver) WriteLogRequest(args *WriteLogRequest, result *Writ
 	return err
 }
 
-func (receiver *RPCReceiver)SnapshotRequest(args *NodeSnapshotRequest, result *NodeSnapshotResponse) error {
+func (receiver *RPCReceiver) SnapshotRequest(args *NodeSnapshotRequest, result *NodeSnapshotResponse) error {
 	return receiver.raftEventHandler.OnSnapshotRequestReceived(args, result)
 }

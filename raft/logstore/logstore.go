@@ -1,9 +1,9 @@
 package logstore
 
 import (
-	"sync"
 	"errors"
 	"log"
+	"sync"
 )
 
 type LogItem struct {
@@ -42,9 +42,9 @@ func (store *LogStore) LastLogItem() *LogItem {
 		return nil
 	}
 	var li *LogStoreNode = nil
-	if (store.tail == nil) {
+	if store.tail == nil {
 		li = store.head
-	}else {
+	} else {
 		li = store.tail
 	}
 	return &LogItem{li.Index, li.Data, li.Term}
@@ -63,14 +63,14 @@ func (store *LogStore) AppendLogItem(li *LogItem) error {
 	if store.head == nil {
 		item.Index = 1
 		store.head = item
-	}else if (store.tail == nil) {
+	} else if store.tail == nil {
 		item.Index = 2
 		store.tail = item
 		store.tail.prev = store.head
 		store.head.next = store.tail
-	}else {
+	} else {
 		item.Index = store.tail.Index + 1
-		store.tail.next = item;
+		store.tail.next = item
 		item.prev = store.tail
 		store.tail = item
 	}
@@ -85,14 +85,14 @@ func (store *LogStore) Append(data uint64, term uint64) error {
 	if store.head == nil {
 		item.Index = 1
 		store.head = item
-	}else if (store.tail == nil) {
+	} else if store.tail == nil {
 		item.Index = 2
 		store.tail = item
 		store.tail.prev = store.head
 		store.head.next = store.tail
-	}else {
+	} else {
 		item.Index = store.tail.Index + 1
-		store.tail.next = item;
+		store.tail.next = item
 		item.prev = store.tail
 		store.tail = item
 	}
@@ -109,23 +109,23 @@ func (store *LogStore) RemoveByIndex(index uint32) *LogStoreNode {
 	item := store.findByIndex(index)
 	if item == nil {
 		return nil
-	}else if item == store.head {
+	} else if item == store.head {
 		store.head = store.head.next
 		if store.head != nil {
 			store.head.prev = nil
 		}
-	}else if item == store.tail {
+	} else if item == store.tail {
 		prev := store.tail.prev
-		if (prev == store.head) {
+		if prev == store.head {
 			store.tail.prev = nil
 			store.head.next = nil
 			store.tail = nil
-		}else {
+		} else {
 			store.tail = prev
 			prev.prev = nil
 			store.tail.next = nil
 		}
-	}else {
+	} else {
 		prev := item.prev
 		next := item.next
 		prev.next = next
@@ -152,9 +152,9 @@ func (store *LogStore) RemoveAfterExc(index uint32) bool {
 		store.head.prev = nil
 		store.tail = nil
 		store.updateSize(1)
-	}else if item == store.tail {
+	} else if item == store.tail {
 		//do nothing
-	}else {
+	} else {
 		store.updateSize(store.size - countNodes(item.next))
 		store.tail = item
 		store.tail.next = nil
@@ -175,19 +175,19 @@ func (store *LogStore) RemoveAfterIncl(index uint32) bool {
 	if item == store.head {
 		store.head.next = nil
 		store.head = nil
-		if (store.tail != nil) {
+		if store.tail != nil {
 			store.tail.prev = nil
 		}
 		store.tail = nil
 		store.updateSize(0)
-	}else if item == store.tail {
+	} else if item == store.tail {
 		store.tail = item.prev
 		store.tail.next = nil
-		if (store.tail == store.head) {
+		if store.tail == store.head {
 			store.tail = nil
 		}
 		store.decSize()
-	}else {
+	} else {
 		store.updateSize(store.size - countNodes(item))
 		prev := item.prev
 		store.tail = prev
@@ -277,7 +277,6 @@ func (store *LogStore) print() {
 	log.Println()
 }
 
-
 func (store *LogStore) incSize() {
 	store.size += 1
 }
@@ -290,6 +289,6 @@ func (store *LogStore) decSize() error {
 	return nil
 }
 
-func (store* LogStore) updateSize(newSize uint32) {
+func (store *LogStore) updateSize(newSize uint32) {
 	store.size = newSize
 }

@@ -1,6 +1,7 @@
 package main
+
 import (
-	"consensus/raft/protocol"
+	"github.com/tierex/conslib/raft/protocol"
 	"time"
 )
 
@@ -15,7 +16,7 @@ type Replication struct {
 
 const (
 	SUCCESS = 1
-	ERROR = 2
+	ERROR   = 2
 )
 
 type ReplStatus struct {
@@ -50,9 +51,8 @@ func NewReplication(state *LeaderState) *Replication {
 	return repl
 }
 
-
 func (repl *Replication) ReplicateToPeer(peer *Peer) {
-	repl.replChan <- &ReplicationTask{peer, peer.Id, 1}
+	repl.replChan <- &ReplicationTask{peer, peer.ID, 1}
 }
 
 func (repl *Replication) ReplicateToAll(taskId string, npeers uint32) {
@@ -70,22 +70,24 @@ func (repl *Replication) startReplicationProcess() {
 	for {
 		select {
 		case replTask := <-repl.replChan:
-			log.Debug(repl.leaderState.NodeId(), "Received task: ", replTask.taskId, " for peer: ", replTask.peer.Id)
+			log.Debug(repl.leaderState.NodeId(), "Received task: ", replTask.taskId, " for peer: ", replTask.peer.ID)
 			if _, ok := repl.activeTasks[replTask.taskId]; !ok {
 				repl.activeTasks[replTask.taskId] = &ReplicationResult{replTask.taskId, replTask.npeers, 0, 0, 0, 0}
 			}
 			go repl.replicateToPeer(replTask)
 		case peerResult := <-repl.peerReplReceiver:
 			task := repl.activeTasks[peerResult.taskId]
-			task.ProcessedCount += 1
+			task.ProcessedCount++
 			switch peerResult.code {
 			case ERROR:
-				task.FailedCount += 1
+				task.FailedCount++
 			case SUCCESS:
-				task.SuccessCount += 1
+				task.SuccessCount++
 			}
 			if task.TotalCount == task.ProcessedCount {
-				log.Debug(repl.leaderState.raftNode.Id, "Replication finished, sending response: ", task.TaskId, " ", task.SuccessCount, task.FailedCount)
+				log.Debug(repl.leaderState.raftNode.ID,
+					"Replication finished, sending response: ",
+					task.TaskId, " ", task.SuccessCount, task.FailedCount)
 				repl.responseReceiver <- task
 				delete(repl.activeTasks, peerResult.taskId)
 			}
@@ -101,9 +103,9 @@ func (repl *Replication) startReplicationProcess() {
 func (repl *Replication) replicateToPeer(replTask *ReplicationTask) {
 	server := repl.leaderState.raftNode
 	args := repl.buildAppendArgs(replTask.peer)
-	reply, err := repl.sendToPeer(replTask.peer.Id, args)
-	log.Debug(repl.leaderState.raftNode.Id, "Received response from peer: ", replTask.peer.Id, "status:", reply.Success)
-	switch  {
+	reply, err := repl.sendToPeer(replTask.peer.ID, args)
+	log.Debug(repl.leaderState.raftNode.ID, "Received response from peer: ", replTask.peer.ID, "status:", reply.Success)
+	switch {
 	case err != nil:
 		repl.peerReplReceiver <- &ReplStatus{ERROR, replTask.taskId}
 	case reply.Term > server.State.Term:
@@ -111,7 +113,7 @@ func (repl *Replication) replicateToPeer(replTask *ReplicationTask) {
 		eventLoop.Trigger(NewUpdateStateEvent(BECOME_FOLLOWER, time.Now()))
 		repl.peerReplReceiver <- &ReplStatus{ERROR, replTask.taskId}
 	case !reply.Success:
-		replTask.peer.NextIndex -= 1
+		replTask.peer.NextIndex--
 		repl.replChan <- replTask
 	default:
 		replTask.peer.MatchIndex = replTask.peer.NextIndex - 1
@@ -127,10 +129,10 @@ func (repl *Replication) buildAppendArgs(peer *Peer) *protocol.AppendArgs {
 	logItem := server.State.Store.FindByIndex(peer.NextIndex - 1)
 	if logItem == nil {
 		args.PrevLogTerm = 1
-	}else {
+	} else {
 		args.PrevLogTerm = logItem.Term
 	}
-	args.LeaderId = server.Id
+	args.LeaderId = server.ID
 	args.Term = server.State.Term
 	args.Entries = server.State.Store.GetAllItemsAfter(peer.NextIndex - 1)
 	return args
