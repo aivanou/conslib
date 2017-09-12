@@ -1,92 +1,90 @@
-package main
+package raft
 
 import (
-	"errors"
 	"time"
+
+	"github.com/tierex/conslib/raft/protocol"
 )
 
-type WriteRequest struct {
-	taskID       string
-	data         uint64
-	responseChan chan uint32
+// LeaderState is an active state when the node becomes a leader
+type LeaderState struct {
+	SmState                               // extends the SmState
+	raftNode             *Node            // reference to the raft node
+	peers                map[string]*Peer //
+	eventFunctions       map[uint16]eventProcessor
+	ongoingHeartbeatTask map[string]bool // has true value for peers that have ongoing heartbeat.
+	// each peer(follower) contains timer that every {duration} sends the request to the
+	// heartbeat channel for sending AppendArgs message to the corresponding server.
+	// If the destination sever did not reply in time, the  ongoingHeartbeatTask[peer.id] will have true value.
+	// This will prevent from piling up messages for particular peer.
+	heartbeat chan string // the channel for sending AppendArgs message
+	stop      chan bool   // when the leader state starts, it initiases loop in the
+	// background thread. As a retult, in order to switch from leader to another state,
+	// the stop message should be sent to the channel for shutting down the process loop.
 }
 
-type WriteResponse struct {
-	success uint32
+// Peer contains data for sending heartbeat and updating log storage for each follower
+type Peer struct {
+	ID         string        // ID of a peer, this is the same as Node.ID
+	NextIndex  uint32        // TODO: imlement
+	MatchIndex uint32        // TODO: imlement
+	Duration   time.Duration // the period of time between consecutive heartbeats
+	Ticker     *time.Ticker  // the timer for sending heartbeat
 }
 
-func NewLeaderState(nodeState NodeState, raftNode *RaftNode) *LeaderState {
+// NewLeaderState serves as a constructor for for a LeaderState
+func NewLeaderState(state SmState, raftNode *Node) *LeaderState {
 	leaderState := new(LeaderState)
 	leaderState.raftNode = raftNode
-	leaderState.NodeState = nodeState
+	leaderState.SmState = state
 	return leaderState
 }
 
-type LeaderState struct {
-	NodeState
-	peers                map[string]*Peer
-	raftNode             *RaftNode
-	requestReceiver      chan *WriteRequest
-	replicationReceiver  chan *ReplicationResult
-	heartbeat            chan string
-	stop                 chan bool
-	replication          *Replication
-	eventFunctions       map[uint16]eventProcessor
-	ongoingHeartbeatTask map[string]bool
-	activeTasks          map[string]chan uint32
-}
-
-// OnInit blabla
-func (state *LeaderState) OnInit(data interface{}, raftConfig *RaftConfig) error {
+// OnInit is the event that occurs when the State Machine is initialized
+func (state *LeaderState) OnInit(data interface{}, raftConfig NodeConfig) error {
 	slaves := make(map[string]*Peer)
 	for id := range state.raftNode.Servers {
-		logItem := state.raftNode.State.Store.LastLogItem()
-		ind := uint32(1)
-		if logItem != nil {
-			ind = logItem.Index + 1
-		}
-		slaves[id] = &Peer{id, ind, 0, time.Duration(raftConfig.Leader.PeerTimeout), nil}
+		slaves[id] = &Peer{
+			ID:         id,
+			NextIndex:  1,
+			MatchIndex: 0,
+			Duration:   time.Duration(raftConfig.Leader.PeerTimeout),
+			Ticker:     nil}
 	}
 	state.eventFunctions = make(map[uint16]eventProcessor)
-	state.activeTasks = make(map[string]chan uint32)
 	state.peers = slaves
-	state.requestReceiver = make(chan *WriteRequest, 100)
-	state.replicationReceiver = make(chan *ReplicationResult, 100)
 	state.heartbeat = make(chan string, 100)
 	state.stop = make(chan bool, 100)
 	state.ongoingHeartbeatTask = make(map[string]bool)
-	state.eventFunctions[WRITE_LOG] = state.processWriteLogRequest
-	state.replication = NewReplication(state)
-	go state.processLoop()
 	return nil
 }
 
-func (state *LeaderState) NodeId() string {
+// OnStateStarted is an event that occurs when the StatMachine switches to the current state
+func (state *LeaderState) OnStateStarted() error {
+	go state.processLoop()
+	state.startHeartbeat()
+	return nil
+}
+
+// OnStateFinished is an event that occurs
+// when the StatMachine switches to the other state from this state
+func (state *LeaderState) OnStateFinished() error {
+	state.stopHeartbeat()
+	return nil
+}
+
+// NodeID returns the node Id
+func (state *LeaderState) NodeID() string {
 	return state.raftNode.ID
 }
 
-func (state *LeaderState) processWriteLogRequest(data interface{}) error {
-	req, ok := data.(*WriteRequest)
-	if !ok {
-		return errors.New("Incorrect input data for Write request")
-	}
-	go func() { state.requestReceiver <- req }()
-	return nil
-}
-
-type Peer struct {
-	ID         string
-	NextIndex  uint32
-	MatchIndex uint32
-	Duration   time.Duration
-	Ticker     *time.Ticker
-}
-
-func (state *LeaderState) Process(eventId uint16, data interface{}) error {
-	err := state.eventFunctions[eventId](data)
+// Process processes the corresponding eventID
+func (state *LeaderState) Process(eventID uint16, data interface{}) error {
+	err := state.eventFunctions[eventID](data)
 	return err
 }
 
+// Stop is called when the leater state is changed to follower.
 func (state *LeaderState) Stop() error {
 	state.stop <- true
 	return nil
@@ -99,48 +97,12 @@ func (state *LeaderState) processLoop() {
 		select {
 		case peerID := <-state.heartbeat:
 			if _, ok := state.ongoingHeartbeatTask[peerID]; !ok {
-				state.replication.ReplicateToPeer(state.peers[peerID])
-			}
-		case req := <-state.requestReceiver:
-			log.Debug(server.ID, "Received request from client: ", req.taskID)
-			state.activeTasks[req.taskID] = req.responseChan
-			state.raftNode.State.Store.Append(req.data, state.raftNode.State.Term)
-			lastLogItem := state.raftNode.State.Store.LastLogItem()
-			for _, peer := range state.peers {
-				peer.NextIndex = lastLogItem.Index
-			}
-			state.replication.ReplicateToAll(req.taskID, uint32(len(state.peers)))
-		case finishedTask := <-state.replicationReceiver:
-			taskID := finishedTask.TaskId
-			if _, ok := state.activeTasks[taskID]; !ok {
-				delete(state.ongoingHeartbeatTask, finishedTask.TaskId)
-			} else {
-				lastLogItem := state.raftNode.State.Store.LastLogItem()
-				for _, peer := range state.peers {
-					peer.NextIndex = lastLogItem.Index + 1
-				}
-				state.raftNode.State.UpdateCommitIndex(lastLogItem.Index)
-				log.Debug(server.ID, "Finished task: ", taskID, " data: ", finishedTask.SuccessCount)
-				state.activeTasks[taskID] <- finishedTask.SuccessCount
-				delete(state.activeTasks, taskID)
+				state.sendHeartbeat(state.peers[peerID])
 			}
 		case <-state.stop:
-			state.replication.Stop()
-			close(state.replicationReceiver)
 			close(state.stop)
-			close(state.requestReceiver)
 		}
 	}
-}
-
-func (state *LeaderState) OnStateStarted() error {
-	state.startHeartbeat()
-	return nil
-}
-
-func (state *LeaderState) OnStateFinished() error {
-	state.stopHeartbeat()
-	return nil
 }
 
 func (state *LeaderState) startHeartbeat() {
@@ -159,5 +121,27 @@ func (state *LeaderState) stopHeartbeat() {
 		if peer.Ticker != nil {
 			peer.Ticker.Stop()
 		}
+	}
+}
+
+func (state *LeaderState) sendHeartbeat(peer *Peer) error {
+	args := &protocol.AppendArgs{
+		Term:     1,
+		LeaderId: "",
+	}
+	state.ongoingHeartbeatTask[peer.ID] = true
+	reply, err := state.raftNode.SendAppend(peer.ID, args)
+	if err != nil {
+		log.Println("Received error: ", err)
+		return err
+	}
+	state.processReply(peer.ID, reply)
+	return nil
+}
+
+func (state *LeaderState) processReply(ID string, reply *protocol.AppendResult) {
+	state.ongoingHeartbeatTask[ID] = false
+	if reply.Term > state.raftNode.State.Term {
+		state.raftNode.eventProcessor.Trigger(NewUpdateStateEvent(BecomeFollower, time.Now()))
 	}
 }

@@ -1,24 +1,25 @@
-package main
+package raft
 
 import (
 	"time"
 )
 
-type eventProcessor func(data interface{}) error
-
+// FollowerState contains data that is relevant for active follower state
 type FollowerState struct {
-	NodeState
-	Duration       time.Duration
+	SmState                      // extends the common data
+	Duration       time.Duration // if the server
 	Timer          *time.Timer
-	raftServer     *RaftNode
+	raftServer     *Node
 	eventFunctions map[uint16]eventProcessor
 }
 
-func (state *FollowerState) OnInit(data interface{}, raftConfig *RaftConfig) error {
-	state.eventFunctions[RESET_TIMER] = state.resetTimer
+// OnInit is the event that occurs when the State Machine is initialized
+func (state *FollowerState) OnInit(data interface{}, raftConfig NodeConfig) error {
+	state.eventFunctions[ResetTimer] = state.resetTimer
 	return nil
 }
 
+// OnStateStarted is an event that occurs when the StatMachine switches to the current state
 func (state *FollowerState) OnStateStarted() error {
 	server := state.raftServer
 	log.Println(server.ID, ": Starting follower timer")
@@ -27,7 +28,6 @@ func (state *FollowerState) OnStateStarted() error {
 		if !wasActive {
 			log.Println(server.ID, "timer was in stop state, recreating timer")
 		}
-		return nil
 	} else {
 		state.Timer = time.NewTimer(time.Millisecond * state.Duration)
 	}
@@ -35,18 +35,21 @@ func (state *FollowerState) OnStateStarted() error {
 		<-cState.Timer.C
 		eventLoop := cState.raftServer.eventProcessor
 		log.Println(cState.raftServer.ID, "triggering BECOME_CANDIDATE event")
-		eventLoop.Trigger(NewUpdateStateEvent(BECOME_CANDIDATE, time.Now()))
+		eventLoop.Trigger(NewUpdateStateEvent(BecomeCandidate, time.Now()))
 	}(state)
 	return nil
 }
 
+// OnStateFinished is an event that occurs
+// when the StatMachine switches to the other state from this state
 func (state *FollowerState) OnStateFinished() error {
 	state.Timer.Stop()
 	return nil
 }
 
-func (state *FollowerState) Process(eventId uint16, data interface{}) error {
-	return state.eventFunctions[eventId](data)
+// Process processes the corresponding eventID
+func (state *FollowerState) Process(eventID uint16, data interface{}) error {
+	return state.eventFunctions[eventID](data)
 }
 
 func (state *FollowerState) resetTimer(data interface{}) error {

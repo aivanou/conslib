@@ -1,11 +1,11 @@
 package protocol
 
 import (
-	"log"
-	"net/rpc"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
+	"net/rpc"
 )
 
 type Host struct {
@@ -20,8 +20,6 @@ func (host Host) String() string {
 type RaftEventHandler interface {
 	OnAppendEntriesReceived(args *AppendArgs, result *AppendResult) error
 	OnRequestVoteReceived(args *RequestArgs, result *RequestResult) error
-	OnWriteLogRequestReceived(args *WriteLogRequest, result *WriteLogResponse) error
-	OnSnapshotRequestReceived(args *NodeSnapshotRequest, result*NodeSnapshotResponse) error
 }
 
 type Protocol interface {
@@ -36,14 +34,13 @@ func NewProtocol() Protocol {
 type RPCProtocol struct {
 }
 
-
 func (protocol *RPCProtocol) NewSender(host *Host) (Sender, error) {
 	sender := new(RPCSender)
 	client, err := rpc.DialHTTP("tcp", host.String())
-	log.Println("Adding new server locally: ", host)
+	log.Println("Establishing connection with: ", host)
 	if err != nil {
-		log.Fatal("Error while initialising a sender:", err)
-		return nil, err
+		log.Println("Warning: Cannot establish connection. ", err)
+		return nil, nil
 	}
 	sender.RpcClient = client
 	sender.protocol = protocol

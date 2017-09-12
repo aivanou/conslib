@@ -1,37 +1,50 @@
-package main
+package raft
+
 import (
-	"os"
-	"io/ioutil"
-	"fmt"
 	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"os"
 )
 
-
-type jsonobject struct {
-	Raft RaftConfig
+// Config is the main config point
+type Config struct {
+	Raft  NodeConfig   `json:"raft"`
+	Peers []PeerConfig `json:"peers"`
 }
 
-type RaftConfig struct {
-	Leader   LeaderConfig
-	Follower FollowerConfig
+// NodeConfig is a raft config data
+type NodeConfig struct {
+	Leader   LeaderConfig   `json:"leader"`
+	Follower FollowerConfig `json:"follower"`
+	Host     string         `json:"host"`
+	Port     int            `json:"port"`
 }
 
+// LeaderConfig is a raft.leader config data
 type LeaderConfig struct {
 	PeerTimeout int `json:"peer_timeout"`
 }
 
+// FollowerConfig is a raft.follower config data
 type FollowerConfig struct {
 	Timeout int `json:"timeout"`
 }
 
-// Reads info from config file
-func ReadConfig() *RaftConfig {
-	file, e := ioutil.ReadFile("./src/github.com/tierex/conslib/config.json")
+// PeerConfig is a peer config data
+type PeerConfig struct {
+	Host string `json:"host"`
+	Port int    `json:"port"`
+}
+
+// ReadConfig Reads info from config file
+func ReadConfig(filePath string) *Config {
+	file, e := ioutil.ReadFile(filePath)
 	if e != nil {
 		fmt.Printf("File error: %v\n", e)
 		os.Exit(1)
 	}
-	var jsontype jsonobject
-	json.Unmarshal(file, &jsontype)
-	return &(jsontype.Raft)
+	var config Config
+	json.Unmarshal(file, &config)
+	return &config
 }

@@ -1,11 +1,13 @@
-package main
+package client
+
 import (
+	"fmt"
+	"log"
+	"net/rpc"
 	"os"
 	"strconv"
-	"net/rpc"
-	"log"
-	"fmt"
-	"consensus/raft/protocol"
+
+	"github.com/tierex/conslib/raft/protocol"
 )
 
 func main() {
@@ -15,8 +17,8 @@ func main() {
 	servers := make([]string, nservers)
 	clients := make([]*rpc.Client, nservers)
 	for i := 0; i < nservers; i++ {
-		servers[i] = fmt.Sprintf("%s:%d", "localhost", sport + i)
-		clients[i] = newRpcClient(servers[i])
+		servers[i] = fmt.Sprintf("%s:%d", "localhost", sport+i)
+		clients[i] = newRPCClient(servers[i])
 	}
 	dlen := 5
 	for i := 0; i < dlen; i++ {
@@ -26,14 +28,13 @@ func main() {
 }
 
 func sendWriteLog(clients []*rpc.Client, data uint64) {
-	for _, client := range clients {
-		sargs := &protocol.WriteLogRequest{data}
-		reply := new(protocol.WriteLogResponse)
-		client.Call("RPCReceiver.WriteLogRequest", sargs, &reply)
-		fmt.Println(reply.Status)
-	}
+	// for _, client := range clients {
+	// 	sargs := &protocol.WriteLogRequest{data}
+	// 	reply := new(protocol.WriteLogResponse)
+	// 	client.Call("RPCReceiver.WriteLogRequest", sargs, &reply)
+	// 	fmt.Println(reply.Status)
+	// }
 }
-
 
 func printServersState(clients []*rpc.Client) {
 	for _, client := range clients {
@@ -52,7 +53,7 @@ func getSnapshot(client *rpc.Client) *protocol.NodeSnapshotResponse {
 	return result
 }
 
-func newRpcClient(host string) *rpc.Client {
+func newRPCClient(host string) *rpc.Client {
 	client, err := rpc.DialHTTP("tcp", host)
 	log.Println("Adding new server: ", host)
 	if err != nil {

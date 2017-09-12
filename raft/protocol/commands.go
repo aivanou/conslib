@@ -2,8 +2,7 @@ package protocol
 
 import (
 	"fmt"
-
-	"github.com/tierex/conslib/raft/logstore"
+	// "github.com/tierex/conslib/raft/logstore"
 )
 
 type RequestArgs struct {
@@ -19,12 +18,12 @@ type RequestResult struct {
 }
 
 type AppendArgs struct {
-	Term         uint64
-	LeaderId     string
-	PrevLogIndex uint32
-	PrevLogTerm  uint64
-	LeaderCommit uint32
-	Entries      []logstore.LogItem
+	Term     uint64
+	LeaderId string
+	// PrevLogIndex uint32
+	// PrevLogTerm  uint64
+	// LeaderCommit uint32
+	// Entries      []logstore.LogItem
 }
 
 type AppendResult struct {

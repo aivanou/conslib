@@ -1,0 +1,15 @@
+package: github.com/tierex/conslib
+import:
+- package: github.com/wadey/gocovmerge
+  version: b5bfa59ec0adc420475f97f89b58045c721d761c
+  repo: https://github.com/wadey/gocovmerge
+- package: golang.org/x/tools
+  version: 3b1faeda9afbcba128c2d794b38ffe7982141139
+  repo: https://go.googlesource.com/tools
+  subpackages:
+  - cmd/goimports
+  - cover
+  - go/ast/astutil
+  - imports
+- package: github.com/Sirupsen/logrus
+  version: ^1.0.3

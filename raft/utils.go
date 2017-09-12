@@ -1,4 +1,4 @@
-package main
+package raft
 
 import (
 	"hash/fnv"
@@ -11,11 +11,16 @@ import (
 
 var log = NewLogObject("", logrus.DebugLevel)
 
-func NewLogObject(serverId string, level logrus.Level) *logrus.Logger {
+// NewLogObject returns the new log object
+func NewLogObject(serverID string, level logrus.Level) *logrus.Logger {
 	log := logrus.New()
 	log.Level = level
 	log.Formatter = new(logrus.TextFormatter)
 	return log
+}
+
+func toID(host string, port int) string {
+	return host + ":" + strconv.Itoa(port)
 }
 
 func parse(args []string) (string, map[string]int) {
@@ -24,11 +29,11 @@ func parse(args []string) (string, map[string]int) {
 	for i := 0; i < len(args); i++ {
 		if args[i] == "-id" {
 			id = args[i+1]
-			i += 1
+			i++
 		} else if args[i] == "-s" {
-			i += 1
+			i++
 			number, _ := strconv.Atoi(args[i])
-			i += 1
+			i++
 			for j := 0; j < number; j++ {
 				sid := args[i+j*2]
 				port, _ := strconv.Atoi(args[i+j*2+1])

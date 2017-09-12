@@ -1,0 +1,26 @@
+hash: 7eee36d01937b960020ef3b011617baecae0382b9a1642899569c93bd444fea8
+updated: 2017-09-12T11:47:31.007989202-07:00
+imports:
+- name: github.com/Sirupsen/logrus
+  version: f006c2ac4710855cf0f916dd6b77acf6b048dc6e
+- name: github.com/wadey/gocovmerge
+  version: b5bfa59ec0adc420475f97f89b58045c721d761c
+  repo: https://github.com/wadey/gocovmerge
+- name: golang.org/x/crypto
+  version: 2bcb7b5baf829ed280ed1fd7320ad473b6849d60
+  subpackages:
+  - ssh/terminal
+- name: golang.org/x/sys
+  version: 7a85bfad8bb9558204b9cc9b3624680d2d443a35
+  subpackages:
+  - unix
+  - windows
+- name: golang.org/x/tools
+  version: 3b1faeda9afbcba128c2d794b38ffe7982141139
+  repo: https://go.googlesource.com/tools
+  subpackages:
+  - cmd/goimports
+  - cover
+  - go/ast/astutil
+  - imports
+testImports: []

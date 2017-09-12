@@ -1,0 +1,22 @@
+{
+  "raft": {
+    "leader": {
+      "peer_timeout": 2000
+    },
+    "follower": {
+      "timeout": 3000
+    },
+    "host": "localhost",
+    "port": 9991
+  },
+  "peers": [
+    {
+      "host": "localhost",
+      "port": 9992
+    },
+    {
+      "host": "localhost",
+      "port": 9993
+    }
+  ]
+}
